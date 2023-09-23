@@ -1,0 +1,10 @@
+﻿{
+  "AssemblyName": "ToolbeltFix.dll",
+  "Author": "Lazy",
+  "DisplayName": "Toolbelt Fix",
+  "EntryMethod": "ToolbeltFix.Main.Load",
+  "HomePage": "https://www.nexusmods.com/strandeddeep/mods/218",
+  "Id": "ToolbeltFix",
+  "Repository": "https://www.dropbox.com/s/a4t60w7q08nh6pn/Repository.json?dl=1",
+  "Version": "0.0.2"
+}
