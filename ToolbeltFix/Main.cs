@@ -1086,7 +1086,7 @@ namespace ToolbeltFix
                     {
                         return false;
                     }
-                    AudioManager.GetAudioPlayer().Play3D(success ? _storedClipRef(__instance) : _fullClipRef(__instance), __instance.transform.position, AudioMixerChannel.FX, AudioRollOffDistance.VeryNear, AudioPlayMode.Single);
+                    AudioManager.GetAudioPlayer().Play3D(success ? _storedClipRef(__instance) : _fullClipRef(__instance), __instance.transform.position, AudioMixerChannels.FX, AudioRollOffDistance.VeryNear, AudioPlayMode.Single);
                     return false;
                 }
                 catch (Exception e)
@@ -1112,7 +1112,7 @@ namespace ToolbeltFix
                     {
                         return false;
                     }
-                    AudioManager.GetAudioPlayer().Play3D(_poppedClipRef(__instance), __instance.transform.position, AudioMixerChannel.FX, AudioRollOffDistance.VeryNear, AudioPlayMode.Single);
+                    AudioManager.GetAudioPlayer().Play3D(_poppedClipRef(__instance), __instance.transform.position, AudioMixerChannels.FX, AudioRollOffDistance.VeryNear, AudioPlayMode.Single);
                     return false;
                 }
                 catch (Exception e)
