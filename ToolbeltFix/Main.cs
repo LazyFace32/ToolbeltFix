@@ -1596,7 +1596,7 @@ namespace ToolbeltFix
                     UpdateLevel.Invoke(__instance, null);
 
                     JObject hotkeysData = data.GetField("Hotkeys");
-                    Timing.RunCoroutine(DeferredLoad(__instance, hotkeysData));
+                    LevelLoader.CurrentLoader.DeferredLoading.Add(() => Timing.RunCoroutine(DeferredLoad(__instance, hotkeysData)));
                     return false;
                 }
                 catch (Exception e)
