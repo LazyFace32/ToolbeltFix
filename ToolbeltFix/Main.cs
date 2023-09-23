@@ -93,6 +93,7 @@ namespace ToolbeltFix
         private static readonly AccessTools.FieldRef<StorageSlot<IPickupable>, int> _indexRef = AccessTools.FieldRefAccess<StorageSlot<IPickupable>, int>("_index");
 
         private static readonly AccessTools.FieldRef<SlotStorage, List<StorageSlot<IPickupable>>> _slotDataRef = AccessTools.FieldRefAccess<SlotStorage, List<StorageSlot<IPickupable>>>("_slotData");
+        private static readonly AccessTools.FieldRef<SlotStorage, List<StorageSlot<IPickupable>>> _tempRef = AccessTools.FieldRefAccess<SlotStorage, List<StorageSlot<IPickupable>>>("_temp");
         private static readonly AccessTools.FieldRef<SlotStorage, Transform> _storageContainerRef = AccessTools.FieldRefAccess<SlotStorage, Transform>("_storageContainer");
         private static readonly AccessTools.FieldRef<SlotStorage, bool> _storeOtherStorageRef = AccessTools.FieldRefAccess<SlotStorage, bool>("_storeOtherStorage");
         private static readonly AccessTools.FieldRef<SlotStorage, LoadState> _loadStateRef = AccessTools.FieldRefAccess<SlotStorage, LoadState>("_loadState");
@@ -424,6 +425,28 @@ namespace ToolbeltFix
         }
 #endif
 
+        private static IEnumerable<StorageSlot<IPickupable>> GetSlots(SlotStorage __instance, params IComparer<StorageSlot<IPickupable>>[] comparators)
+        {
+            for (int j = 0; j < _slotDataRef(__instance).Count; j++)
+            {
+                _tempRef(__instance)[j] = _slotDataRef(__instance)[j];
+            }
+            if (comparators.Length > 0)
+            {
+                for (int k = 0; k < comparators.Length; k++)
+                {
+                    _tempRef(__instance).Sort(comparators[k]);
+                }
+            }
+            int num;
+            for (int i = 0; i < _tempRef(__instance).Count; i = num + 1)
+            {
+                yield return _tempRef(__instance)[i];
+                num = i;
+            }
+            yield break;
+        }
+
         private static IEnumerable<IPickupable> GetStored(SlotStorage __instance, StorageType storageType)
         {
             int count = storageType == StorageType.Inventory ? 10 : __instance.SlotCount;
@@ -640,10 +663,7 @@ namespace ToolbeltFix
 
                 try
                 {
-                    List<StorageSlot<IPickupable>> slots = _playerRef(__instance).Inventory.GetSlotStorage().GetSlots(InventoryHotkeyComparison).ToList();
-                    slots.Sort(StorageSlot<IPickupable>.QuantityComparison);
-
-                    foreach (StorageSlot<IPickupable> storageSlot in slots)
+                    foreach (StorageSlot<IPickupable> storageSlot in GetSlots(_playerRef(__instance).Inventory.GetSlotStorage() as SlotStorage, InventoryHotkeyComparison, StorageSlot<IPickupable>.QuantityComparison))
                     {
                         foreach (IPickupable obj in storageSlot.Objects)
                         {
@@ -665,108 +685,6 @@ namespace ToolbeltFix
                 }
             }
         }
-
-#if DEBUG
-        [HarmonyPatch(typeof(Crafter), nameof(Crafter.Craft), new Type[] { typeof(CraftingCombination), typeof(MiniGuid) })]
-        private class Crafter_Craft_Patch
-        {
-            private static readonly AccessTools.FieldRef<Crafter, Dictionary<CraftingType, IList<IBase>>> _cachedMaterialsLookupRef = AccessTools.FieldRefAccess<Crafter, Dictionary<CraftingType, IList<IBase>>>("_cachedMaterialsLookup");
-            private static readonly AccessTools.FieldRef<Crafter, CraftingCombination> _currentCombinationRef = AccessTools.FieldRefAccess<Crafter, CraftingCombination>("_currentCombination");
-            private static readonly AccessTools.FieldRef<Crafter, List<IBase>> _backupCraftedMaterialsRef = AccessTools.FieldRefAccess<Crafter, List<IBase>>("_backupCraftedMaterials");
-            private static readonly AccessTools.FieldRef<Crafter, bool> _executingDelayedPlaceActionRef = AccessTools.FieldRefAccess<Crafter, bool>("_executingDelayedPlaceAction");
-            private static readonly AccessTools.FieldRef<Crafter, IPlayer> _playerRef = AccessTools.FieldRefAccess<Crafter, IPlayer>("_player");
-
-            private static readonly MethodInfo AreAllMaterialsAvailable = AccessTools.Method(typeof(Crafter), "AreAllMaterialsAvailable");
-            private static readonly MethodInfo CleanupCachedMaterials = AccessTools.Method(typeof(Crafter), "CleanupCachedMaterials");
-            private static readonly MethodInfo DisableCraftingInput = AccessTools.Method(typeof(Crafter), "DisableCraftingInput");
-            private static readonly MethodInfo GetCraftingDelay = AccessTools.Method(typeof(Crafter), "GetCraftingDelay");
-            private static readonly MethodInfo IsCraftingFree = AccessTools.Method(typeof(Crafter), "IsCraftingFree");
-            private static readonly MethodInfo Craft = AccessTools.Method(typeof(Crafter), "Craft", new Type[] { typeof(SaveablePrefab) });
-
-            private static bool Prefix(Crafter __instance, CraftingCombination combination, MiniGuid referenceId)
-            {
-                if (!enabled) return true;
-
-                try
-                {
-                    logger.Log("Crafter - Craft");
-                    //logger.Log(Environment.StackTrace);
-
-                    _currentCombinationRef(__instance) = combination;
-                    _backupCraftedMaterialsRef(__instance).Clear();
-                    foreach (CraftingType key in _currentCombinationRef(__instance).Materials.Skip(_currentCombinationRef(__instance).IsExtension ? 1 : 0))
-                    {
-                        if (_cachedMaterialsLookupRef(__instance).TryGetValue(key, out IList<IBase> list))
-                        {
-                            int num = list.Count - 1;
-                            if (num >= 0)
-                            {
-                                IBase item = list[num];
-                                list.Remove(item);
-                                _backupCraftedMaterialsRef(__instance).Add(item);
-
-                                IPickupable pickupable = item as IPickupable;
-
-                                //logger.Log(pickupable.CraftingType.InteractiveType + ", " + pickupable.ReferenceId);
-                            }
-                        }
-                    }
-                    if (!_executingDelayedPlaceActionRef(__instance))
-                    {
-                        if (_playerRef(__instance).IsOwner)
-                        {
-                            DisableCraftingInput.Invoke(__instance, new object[] { true });
-                        }
-                        BeamTiming.WaitAnd((float)GetCraftingDelay.Invoke(__instance, null), delegate
-                        {
-                            if (_playerRef(__instance).IsOwner)
-                            {
-                                DisableCraftingInput.Invoke(__instance, new object[] { false });
-                            }
-                            _executingDelayedPlaceActionRef(__instance) = false;
-                            if (((bool)AreAllMaterialsAvailable.Invoke(__instance, null) || (bool)IsCraftingFree.Invoke(__instance, null)) && !settings.blockCrafting)
-                            {
-                                BaseObject obj = MultiplayerMng.Instantiate<BaseObject>(_currentCombinationRef(__instance).PrefabAssetPath, referenceId);
-                                Craft.Invoke(__instance, new object[] { obj });
-                                return;
-                            }
-                            CleanupCachedMaterials.Invoke(__instance, null);
-                        });
-                        _executingDelayedPlaceActionRef(__instance) = true;
-                    }
-
-                    return false;
-                }
-                catch (Exception e)
-                {
-                    logger.LogException(e);
-                    return true;
-                }
-            }
-        }
-
-        [HarmonyPatch(typeof(InteractiveObject), "Beam.ICraftingMaterial.Consume")]
-        private class InteractiveObject_Consume_Patch
-        {
-            private static bool Prefix(InteractiveObject __instance)
-            {
-                if (!enabled) return true;
-
-                try
-                {
-                    logger.Log("InteractiveObject - Consume");
-                    logger.Log("ReferenceId: " + __instance.ReferenceId);
-
-                    return true;
-                }
-                catch (Exception e)
-                {
-                    logger.LogException(e);
-                    return true;
-                }
-            }
-        }
-#endif
 
         [HarmonyPatch(typeof(Holder), "Release")]
         private class Holder_Release_Patch
@@ -1076,7 +994,7 @@ namespace ToolbeltFix
             private static readonly AccessTools.FieldRef<SlotStorageAudio, AudioClip> _storedClipRef = AccessTools.FieldRefAccess<SlotStorageAudio, AudioClip>("_storedClip");
             private static readonly AccessTools.FieldRef<SlotStorageAudio, AudioClip> _fullClipRef = AccessTools.FieldRefAccess<SlotStorageAudio, AudioClip>("_fullClip");
 
-            private static bool Prefix(SlotStorageAudio __instance, IPickupable pickupable, bool success)
+            private static bool Prefix(SlotStorageAudio __instance, bool success)
             {
                 if (!enabled) return true;
 
@@ -1102,7 +1020,7 @@ namespace ToolbeltFix
         {
             private static readonly AccessTools.FieldRef<SlotStorageAudio, AudioClip> _poppedClipRef = AccessTools.FieldRefAccess<SlotStorageAudio, AudioClip>("_poppedClip");
 
-            private static bool Prefix(SlotStorageAudio __instance, IPickupable pickupable)
+            private static bool Prefix(SlotStorageAudio __instance)
             {
                 if (!enabled) return true;
 
@@ -1168,7 +1086,6 @@ namespace ToolbeltFix
         {
             private static readonly AccessTools.FieldRef<StorageMenuPresenter, ISlotStorage<IPickupable>> _storageRef = AccessTools.FieldRefAccess<StorageMenuPresenter, ISlotStorage<IPickupable>>("_storage");
 
-            private static readonly MethodInfo DestinationStorage = AccessTools.PropertyGetter(typeof(StorageMenuPresenter), "DestinationStorage");
             private static readonly MethodInfo RemoveRefreshCallbacks = AccessTools.Method(typeof(StorageMenuPresenter), "RemoveRefreshCallbacks");
             private static readonly MethodInfo AddRefreshCallbacks = AccessTools.Method(typeof(StorageMenuPresenter), "AddRefreshCallbacks");
             private static readonly MethodInfo MPFriendlyExchange = AccessTools.Method(typeof(StorageMenuPresenter), "MPFriendlyExchange");
@@ -1377,7 +1294,10 @@ namespace ToolbeltFix
                             _subbedToInventoryEventsRef(__instance) = false;
                         }
 
-                        if (currentPlatformHotkeyView == null || !currentPlatformHotkeyView.Visible) _viewRef(__instance).Show();
+                        if (currentPlatformHotkeyView == null || !currentPlatformHotkeyView.Visible)
+                        {
+                            _viewRef(__instance).Show();
+                        }
                         return false;
                     }
                     if (!_subbedToInventoryEventsRef(__instance))
@@ -1400,7 +1320,7 @@ namespace ToolbeltFix
         [HarmonyPatch(typeof(HotkeyController), "Holder_Dropped")]
         private class HotkeyController_Holder_Dropped_Patch
         {
-            private static bool Prefix(HotkeyController __instance)
+            private static bool Prefix()
             {
                 if (!enabled) return true;
 
@@ -1432,8 +1352,6 @@ namespace ToolbeltFix
 
                     MiniGuid referenceId = _hotkeysRef(__instance)[number].ReferenceId;
                     CraftingType craftingType = _hotkeysRef(__instance)[number].CraftingType.Value;
-
-                    ISlotStorage<IPickupable> storage = _playerRef(__instance).Inventory.GetSlotStorage();
                     IPickupable currentObject = _playerRef(__instance).Holder.CurrentObject;
 
                     if (referenceId.IsDefault() || !currentObject.IsNullOrDestroyed() && currentObject.CraftingType.Equals(craftingType))
@@ -1441,7 +1359,8 @@ namespace ToolbeltFix
                         return false;
                     }
 
-                    IPickupable pickupable = _playerRef(__instance).Holder.Storage.GetSlots(InventoryHotkeyComparison).SelectMany(slot => slot.Objects).FirstOrDefault_NonAlloc((IPickupable item, MiniGuid id) => item.ReferenceId.Equals(id), referenceId);
+                    ISlotStorage<IPickupable> storage = _playerRef(__instance).Inventory.GetSlotStorage();
+                    IPickupable pickupable = storage.GetSlots(InventoryHotkeyComparison).SelectMany(slot => slot.Objects).FirstOrDefault_NonAlloc((IPickupable item, MiniGuid id) => item.ReferenceId.Equals(id), referenceId);
 
                     if (!pickupable.IsNullOrDestroyed() && (currentObject.IsNullOrDestroyed() || storage.CanPush(currentObject)))
                     {
@@ -1641,8 +1560,7 @@ namespace ToolbeltFix
                         JObject jobject3 = new JObject();
                         jobject3.AddField("Locked", hotkeyData.Locked.Value);
                         jobject3.AddField("ReferenceId", hotkeyData.ReferenceId.ToString());
-                        JObject jobject4 = hotkeyData.CraftingType.Value.Save();
-                        jobject3.AddField("CraftingType", jobject4);
+                        jobject3.AddField("CraftingType", hotkeyData.CraftingType.Value.Save());
                         jobject2.Add(jobject3);
                     }
                     jobject.AddField("Hotkeys", jobject2);
@@ -1745,7 +1663,7 @@ namespace ToolbeltFix
 
                             if (!pickupable.Equals(_playerRef(__instance).Holder.CurrentObject))
                             {
-                                Pop(storage, pickupable, true, true);
+                                Pop(storage, pickupable, true, false);
                                 hotkeyPickupables.Add(i, pickupable);
                             }
                         }
@@ -1772,7 +1690,7 @@ namespace ToolbeltFix
 
                     if (_slotDataRef(storage)[pair.Key + 10].Objects.Count > 0)
                     {
-                        logger.Critical(string.Format("An item is already occupying hotkey {0} meaning the hotkey item will not be loaded correctly. This means you might lose some of your items if you save. Please report this issue to the developer.", hotkeyData.Number));
+                        logger.Critical(string.Format("An item is already occupying hotkey {0} meaning the hotkey item will not be loaded correctly. This means you can lose some of your items if you save. Please report this issue to the developer.", hotkeyData.Number));
                         continue;
                     }
 
