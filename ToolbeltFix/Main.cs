@@ -36,10 +36,10 @@ namespace ToolbeltFix
         [Header("Debug")]
         [Draw("Grey", Min = 0, Max = 1, Width = 400, Type = DrawType.Slider)] public float albedo = 1f;
         [Draw("A", Min = 0, Max = 1, Width = 400, Type = DrawType.Slider)] public float a = 1f;
-        [Draw("Block Crafting", Height = 15)] public bool blockCrafting = false;
 
         [Space(10)]
         [Draw("Simulate Release OnToggle", Height = 15)] public bool simulateReleaseOnToggle = false;
+        [Draw("Max Displayed Items", Min = 0, Max = 50, Width = 400, Type = DrawType.Slider)] public int maxDisplayedItems = 4;
 #endif
 
         private bool alwaysShowHotkeyBarOld;
@@ -241,7 +241,10 @@ namespace ToolbeltFix
                     texta.text += string.Format("i: {0} I: {1}\n", i, _indexRef(_slotData[i]));
                     textb.text += string.Format("Type: {0}\n", _slotData[i].CraftingType.InteractiveType);
                     textc.text += string.Format("Count: {0}\n", _slotData[i].Objects.Count);
-                    textd.text += string.Format("ReferenceId: {0}\n", _slotData[i].Objects.Join(item => item.ReferenceId.ToString(), ", "));
+
+                    IEnumerable<IPickupable> items = _slotData[i].Objects.Take(settings.maxDisplayedItems);
+
+                    textd.text += string.Format("ReferenceId: {0}\n", items.Join(item => item.ReferenceId.ToString(), ", ") + (items.Count() < _slotData[i].Objects.Count ? "..." : ""));
                 }
 
                 texta.text += "\n\n\n";
@@ -1614,6 +1617,7 @@ namespace ToolbeltFix
                     if (Time.unscaledTime > startTime + PlayerRegistry.LocalPeer.GlobalTimeout)
                     {
                         MultiplayerMng.LogError(string.Format("Timeout while waiting for Holder & Inventory ({0}) to load.", _playerRef(__instance).Inventory.GetSlotStorage().LoadState), null);
+                        logger.Error(string.Format("Timeout while waiting for Holder & Inventory ({0}) to load. Cannot proceed with loading the toolbelt.", _playerRef(__instance).Inventory.GetSlotStorage().LoadState));
                         yield break;
                     }
                     yield return 0f;
