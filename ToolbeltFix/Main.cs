@@ -367,9 +367,11 @@ namespace ToolbeltFix
 
         private static IEnumerator<float> ToggleFailedNotification(UnityModManager.ModEntry modEntry)
         {
+            string customRequirements = modEntry.CustomRequirements;
             modEntry.CustomRequirements = "Can only toggle from the main menu";
+
             yield return Timing.WaitForSeconds(5f);
-            modEntry.CustomRequirements = "";
+            modEntry.CustomRequirements = customRequirements;
         }
 
 #if DEBUG
