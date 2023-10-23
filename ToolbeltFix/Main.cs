@@ -34,8 +34,8 @@ namespace ToolbeltFix
 #if DEBUG
         [Space(10)]
         [Header("Debug")]
-        [Draw("Grey", Min = 0, Max = 1, Width = 400, Type = DrawType.Slider)] public float albedo = 1f;
-        [Draw("A", Min = 0, Max = 1, Width = 400, Type = DrawType.Slider)] public float a = 1f;
+        [Draw("Grey", Min = 0, Max = 1, Width = 400, Type = DrawType.Slider)] public float albedo = 0.4f;
+        [Draw("A", Min = 0, Max = 1, Width = 400, Type = DrawType.Slider)] public float a = 0.65f;
 
         [Space(10)]
         [Draw("Simulate Release OnToggle", Height = 15)] public bool simulateReleaseOnToggle = false;
