@@ -507,7 +507,7 @@ namespace ToolbeltFix
             return false;
         }
 
-        private static void Pop(SlotStorage __instance, IPickupable pickupable, bool sort = true, bool silent = false, bool allowClearHotkey = false)
+        private static void Pop(SlotStorage __instance, IPickupable pickupable, bool sort = true, bool allowClearHotkey = false)
         {
             StorageSlot<IPickupable> storageSlot = __instance.FindSlot(pickupable);
             if (storageSlot == null)
@@ -530,11 +530,11 @@ namespace ToolbeltFix
                     __instance.SortSlots();
                 }
             }
-            if (!silent) OnPopped.Invoke(__instance, new object[] { pickupable });
+            OnPopped.Invoke(__instance, new object[] { pickupable });
             _modifiedRef(__instance) = true;
         }
 
-        private static bool Push(SlotStorage __instance, StorageType storageType, IPickupable pickupable, bool force, bool silent = false)
+        private static bool Push(SlotStorage __instance, StorageType storageType, IPickupable pickupable, bool force)
         {
             if (CanPush(__instance, storageType, pickupable, force, true))
             {
@@ -560,7 +560,7 @@ namespace ToolbeltFix
                     pickupable.transform.localScale = Vector3.one;
                     _modifiedRef(__instance) = true;
                     slot.Objects.Add(pickupable);
-                    if (!silent) OnPushed.Invoke(__instance, new object[] { pickupable, true });
+                    OnPushed.Invoke(__instance, new object[] { pickupable, true });
                     pickupable.Store();
                     return true;
                 }
@@ -712,7 +712,7 @@ namespace ToolbeltFix
                         return false;
                     }
 
-                    Pop(__instance.Storage as SlotStorage, pickupable, true, false, true);
+                    Pop(__instance.Storage as SlotStorage, pickupable, true, true);
                     return false;
                 }
                 catch (Exception e)
@@ -1431,8 +1431,11 @@ namespace ToolbeltFix
 
                             if (CanPush(storage, StorageType.Inventory, pickupable, false, true))
                             {
-                                Pop(storage, pickupable, false, true);
-                                Push(storage, StorageType.Inventory, pickupable, false, false);
+                                silentSlotStorageTransfer = true;
+                                Pop(storage, pickupable, false);
+                                silentSlotStorageTransfer = false;
+                                Push(storage, StorageType.Inventory, pickupable, false);
+
                                 IList<IList<InventoryData>> inventoryData = GetInventoryData.Invoke(_inventoryRadialMenuRef(__instance).Inventory, null) as IList<IList<InventoryData>>;
                                 _inventoryRadialMenuRef(__instance).Initialize(inventoryData);
                                 _inventoryRadialMenuRef(__instance).Refresh();
@@ -1482,7 +1485,9 @@ namespace ToolbeltFix
 
                         if (!isCurrentObject && existingHotkeyPickupable.IsNullOrDestroyed())
                         {
-                            Pop(storage, obj, false, true);
+                            silentSlotStorageTransfer = true;
+                            Pop(storage, obj, false);
+                            silentSlotStorageTransfer = false;
                         }
 
                         if (storageSlot.Objects.Count > 0)
@@ -1491,14 +1496,18 @@ namespace ToolbeltFix
 
                             if (CanPush(storage, StorageType.Inventory, hotkeyPickupable, false, true))
                             {
-                                Pop(storage, hotkeyPickupable, false, true);
-                                Push(storage, StorageType.Inventory, hotkeyPickupable, false, true);
+                                silentSlotStorageTransfer = true;
+                                Pop(storage, hotkeyPickupable, false);
+                                Push(storage, StorageType.Inventory, hotkeyPickupable, false);
+                                silentSlotStorageTransfer = false;
                             }
                             else
                             {
                                 if (!isCurrentObject && existingHotkeyPickupable.IsNullOrDestroyed())
                                 {
-                                    Push(storage, StorageType.Inventory, obj, false, true);
+                                    silentSlotStorageTransfer = true;
+                                    Push(storage, StorageType.Inventory, obj, false);
+                                    silentSlotStorageTransfer = false;
                                 }
                                 _viewRef(__instance)?.OnAssignmentFailed();
                                 return false;
@@ -1508,7 +1517,9 @@ namespace ToolbeltFix
                         if (!existingHotkeyPickupable.IsNullOrDestroyed())
                         {
                             obj = existingHotkeyPickupable;
-                            Pop(storage, obj, false, true);
+                            silentSlotStorageTransfer = true;
+                            Pop(storage, obj, false);
+                            silentSlotStorageTransfer = false;
                         }
 
                         if (existingHotkeyData != null)
@@ -1521,7 +1532,7 @@ namespace ToolbeltFix
 
                         if (!isCurrentObject || !existingHotkeyPickupable.IsNullOrDestroyed())
                         {
-                            Push(storage, StorageType.Hotkeys, obj, false, false);
+                            Push(storage, StorageType.Hotkeys, obj, false);
                             storage.SortSlots();
                         }
 
@@ -1635,6 +1646,8 @@ namespace ToolbeltFix
                 SlotStorage storage = _playerRef(__instance).Inventory.GetSlotStorage() as SlotStorage;
                 Dictionary<int, IPickupable> hotkeyPickupables = new Dictionary<int, IPickupable>();
 
+                silentSlotStorageTransfer = true;
+
                 for (int i = 0; i < hotkeysData.Children.Count; i++)
                 {
                     JObject jobject = hotkeysData.Children[i];
@@ -1669,7 +1682,7 @@ namespace ToolbeltFix
 
                             if (!pickupable.Equals(_playerRef(__instance).Holder.CurrentObject))
                             {
-                                Pop(storage, pickupable, true, false);
+                                Pop(storage, pickupable, true);
                                 hotkeyPickupables.Add(i, pickupable);
                             }
                         }
@@ -1700,8 +1713,10 @@ namespace ToolbeltFix
                         continue;
                     }
 
-                    Push(storage, StorageType.Hotkeys, pickupable, false, true);
+                    Push(storage, StorageType.Hotkeys, pickupable, false);
                 }
+
+                silentSlotStorageTransfer = false;
                 yield break;
             }
         }
