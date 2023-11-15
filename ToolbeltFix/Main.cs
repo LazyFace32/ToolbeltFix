@@ -104,7 +104,7 @@ namespace ToolbeltFix
         private static readonly MethodInfo OnPushed = AccessTools.Method(typeof(SlotStorage), "OnPushed");
         private static readonly MethodInfo OnPopped = AccessTools.Method(typeof(SlotStorage), "OnPopped");
 
-        private static Dictionary<StorageRadialMenuPresenter, StorageMenuPresenter> storagePresenters = new Dictionary<StorageRadialMenuPresenter, StorageMenuPresenter>();
+        private static readonly Dictionary<StorageRadialMenuPresenter, StorageMenuPresenter> storagePresenters = new Dictionary<StorageRadialMenuPresenter, StorageMenuPresenter>();
         private static IList<HotkeyElementView> kbHotkeyElements;
         private static IList<HotkeyElementView> dpHotkeyElements;
         private static bool silentSlotStorageTransfer;
@@ -123,8 +123,10 @@ namespace ToolbeltFix
         private static bool worldLoaded;
 
         private static Vector2 referenceResolution = new Vector2(1280f, 720f);
-        private static Text texta, textb, textc, textd;
         private static GameObject canvas;
+        private static Text[] currentObjectTexts;
+        private static Text[] storageTexts;
+        private static Text[] hotkeyTexts;
 
         [SaveOnReload]
         public static bool canvasActive;
@@ -179,6 +181,8 @@ namespace ToolbeltFix
         private static readonly AccessTools.FieldRef<PlatformHotkeyViewProvider, HotkeyView> _kbViewRef = AccessTools.FieldRefAccess<PlatformHotkeyViewProvider, HotkeyView>("_kbView");
         private static readonly AccessTools.FieldRef<PlatformHotkeyViewProvider, HotkeyView> _dpViewRef = AccessTools.FieldRefAccess<PlatformHotkeyViewProvider, HotkeyView>("_dpView");
 
+        private static readonly AccessTools.FieldRef<SlotStorage, StorageSlot<IPickupable>> _selectedSlotRef = AccessTools.FieldRefAccess<SlotStorage, StorageSlot<IPickupable>>("_selectedSlot");
+
         private static void OnUpdate(UnityModManager.ModEntry modEntry, float dt)
         {
             try
@@ -224,41 +228,48 @@ namespace ToolbeltFix
                 List<StorageSlot<IPickupable>> _slotData = AccessTools.Field(typeof(SlotStorage), "_slotData").GetValue(storage) as List<StorageSlot<IPickupable>>;
                 Holder holder = PlayerRegistry.LocalPlayer.Holder;
 
-                texta.text = textb.text = textc.text = textd.text = string.Empty;
+                // i, type, count, reference Id
+                // i, si, type, count, reference Ids
+                // i, type, locked, isOccupied, reference Id
 
-                texta.text += string.Format("i: {0}\n", 0);
-                textb.text += string.Format("Type: {0}\n", holder.CurrentObject?.CraftingType.InteractiveType);
-                textc.text += string.Format("Count: {0}\n", (holder.CurrentObject.IsNullOrDestroyed() ? 0 : 1));
-                textd.text += string.Format("ReferenceId: {0}\n", holder.CurrentObject?.ReferenceId);
+                foreach (Text text in currentObjectTexts)
+                    text.text = string.Empty;
 
-                texta.text += "\n";
-                textb.text += "\n";
-                textc.text += "\n";
-                textd.text += "\n";
+                currentObjectTexts[0].text += string.Format("i: {0}\n", 0);
+                currentObjectTexts[1].text += string.Format("Type: {0}\n", holder.CurrentObject?.CraftingType.InteractiveType);
+                currentObjectTexts[2].text += string.Format("Count: {0}\n", holder.CurrentObject.IsNullOrDestroyed() ? 0 : 1);
+                currentObjectTexts[3].text += string.Format("ReferenceId: {0}\n", holder.CurrentObject?.ReferenceId);
+
+
+                foreach (Text text in storageTexts)
+                    text.text = string.Empty;
 
                 for (int i = 0; i < storage.SlotCount; i++)
                 {
-                    texta.text += string.Format("i: {0} I: {1}\n", i, _indexRef(_slotData[i]));
-                    textb.text += string.Format("Type: {0}\n", _slotData[i].CraftingType.InteractiveType);
-                    textc.text += string.Format("Count: {0}\n", _slotData[i].Objects.Count);
+                    storageTexts[0].text += string.Format("i: {0}\n", i);
+                    storageTexts[1].text += string.Format("idx: {0}\n", _indexRef(_slotData[i]));
+                    storageTexts[2].text += string.Format("Type: {0}\n", _slotData[i].CraftingType.InteractiveType);
+                    storageTexts[3].text += string.Format("Count: {0}\n", _slotData[i].Objects.Count);
 
                     IEnumerable<IPickupable> items = _slotData[i].Objects.Take(settings.maxDisplayedItems);
 
-                    textd.text += string.Format("ReferenceId: {0}\n", items.Join(item => item.ReferenceId.ToString(), ", ") + (items.Count() < _slotData[i].Objects.Count ? "..." : ""));
+                    storageTexts[4].text += string.Format("ReferenceId: {0}\n", items.Join(item => item.ReferenceId.ToString(), ", ") + (items.Count() < _slotData[i].Objects.Count ? "..." : ""));
                 }
 
-                texta.text += "\n\n\n";
-                textb.text += "\n\n\n";
-                textc.text += "\n\n\n";
-                textd.text += "\n\n\n";
+
+                foreach (Text text in hotkeyTexts)
+                    text.text = string.Empty;
 
                 foreach (HotkeyData hotkeyData in _hotkeysRef(PlayerRegistry.LocalPlayer.Hotkeys))
                 {
-                    texta.text += string.Format("i: {0}\n", hotkeyData.Number);
-                    textb.text += string.Format("Type: {0}\n", hotkeyData.CraftingType.Value.InteractiveType);
-                    textc.text += string.Format("Locked: {0}\n", hotkeyData.Locked.Value);
-                    textd.text += string.Format("ReferenceId: {0}\n", hotkeyData.ReferenceId);
+                    hotkeyTexts[0].text += string.Format("i: {0}\n", hotkeyData.Number);
+                    hotkeyTexts[1].text += string.Format("Type: {0}\n", hotkeyData.CraftingType.Value.InteractiveType);
+                    hotkeyTexts[2].text += string.Format("Locked: {0}\n", hotkeyData.Locked.Value);
+                    hotkeyTexts[3].text += string.Format("ReferenceId: {0}\n", hotkeyData.ReferenceId);
                 }
+
+                hotkeyTexts[0].text += string.Format("\n\nSelected: {0}", _selectedSlotRef(storage) != null ? _indexRef(_selectedSlotRef(storage)) : -1);
+                hotkeyTexts[2].text += string.Format("\n\nCount: {0}", _selectedSlotRef(storage)?.Objects.Count);
             }
             catch (Exception e)
             {
@@ -306,7 +317,7 @@ namespace ToolbeltFix
             }
 
 
-            if (!currentObject.IsNullOrDestroyed() && CanPush(storage as SlotStorage, StorageType.Hotkeys, currentObject, false, false))
+            if (!currentObject.IsNullOrDestroyed() && CanPush(storage, StorageType.Hotkeys, currentObject, false, false))
             {
                 StorageSlot<IPickupable> slot = GetSlot(storage, StorageType.Hotkeys, currentObject, false);
 
@@ -381,10 +392,31 @@ namespace ToolbeltFix
 
             int fontSize = 11;
 
-            texta = AddText("Text", fontSize, new Vector2(0.005f, 0.02f), new Vector2(0.98f, 0.98f));
-            textb = AddText("Text", fontSize, new Vector2(0.045f, 0.02f), new Vector2(0.98f, 0.98f));
+            currentObjectTexts = new Text[4];
+            currentObjectTexts[0] = AddText(string.Empty, fontSize, new Vector2(0.02f, 0.02f), new Vector2(0.98f, 0.98f));
+            currentObjectTexts[1] = AddText(string.Empty, fontSize, new Vector2(0.04f, 0.02f), new Vector2(0.98f, 0.98f));
+            currentObjectTexts[2] = AddText(string.Empty, fontSize, new Vector2(0.16f, 0.02f), new Vector2(0.98f, 0.98f));
+            currentObjectTexts[3] = AddText(string.Empty, fontSize, new Vector2(0.225f, 0.02f), new Vector2(0.98f, 0.98f));
+
+            storageTexts = new Text[5];
+            storageTexts[0] = AddText(string.Empty, fontSize, new Vector2(0.02f, 0.02f), new Vector2(0.98f, 0.94f));
+            storageTexts[1] = AddText(string.Empty, fontSize, new Vector2(0.045f, 0.02f), new Vector2(0.98f, 0.94f));
+            storageTexts[2] = AddText(string.Empty, fontSize, new Vector2(0.082f, 0.02f), new Vector2(0.98f, 0.94f));
+            storageTexts[3] = AddText(string.Empty, fontSize, new Vector2(0.205f, 0.02f), new Vector2(0.98f, 0.94f));
+            storageTexts[4] = AddText(string.Empty, fontSize, new Vector2(0.25f, 0.02f), new Vector2(0.98f, 0.94f));
+
+            hotkeyTexts = new Text[5];
+            hotkeyTexts[0] = AddText(string.Empty, fontSize, new Vector2(0.02f, 0.02f), new Vector2(0.98f, 0.65f));
+            hotkeyTexts[1] = AddText(string.Empty, fontSize, new Vector2(0.04f, 0.02f), new Vector2(0.98f, 0.65f));
+            hotkeyTexts[2] = AddText(string.Empty, fontSize, new Vector2(0.16f, 0.02f), new Vector2(0.98f, 0.65f));
+            hotkeyTexts[3] = AddText(string.Empty, fontSize, new Vector2(0.225f, 0.02f), new Vector2(0.98f, 0.65f));
+            hotkeyTexts[4] = AddText(string.Empty, fontSize, new Vector2(0.45f, 0.02f), new Vector2(0.98f, 0.65f));
+
+            //texta = AddText("Hello World this is some very long text to test out the limitations of the text field", fontSize, new Vector2(0.005f, 0.1f), new Vector2(0.98f, 0.98f));
+            //texta = AddText("Hello World this is some very long text to test out the limitations of the text field", fontSize, new Vector2(0.01f, 0.02f), new Vector2(0.98f, 0.98f));
+            /*textb = AddText("Text", fontSize, new Vector2(0.045f, 0.02f), new Vector2(0.98f, 0.98f));
             textc = AddText("Text", fontSize, new Vector2(0.22f, 0.02f), new Vector2(0.98f, 0.98f));
-            textd = AddText("Text", fontSize, new Vector2(0.28f, 0.02f), new Vector2(0.98f, 0.98f));
+            textd = AddText("Text", fontSize, new Vector2(0.28f, 0.02f), new Vector2(0.98f, 0.98f));*/
         }
 
         private static GameObject CreateCanvas()
@@ -414,6 +446,8 @@ namespace ToolbeltFix
             // Text
             GameObject textObject = new GameObject("Text");
             textObject.transform.SetParent(canvas.transform);
+            textObject.transform.localPosition = Vector3.zero;
+            textObject.transform.localScale = Vector3.one;
 
             Text text = textObject.AddComponent<Text>();
             text.font = font;
@@ -425,6 +459,9 @@ namespace ToolbeltFix
             text.rectTransform.anchorMax = anchorMax;
             text.rectTransform.offsetMin = new Vector2();
             text.rectTransform.offsetMax = new Vector2();
+
+            text.rectTransform.offsetMin = Vector3.zero;
+            text.rectTransform.offsetMax = Vector3.zero;
 
             return text;
         }
@@ -576,7 +613,9 @@ namespace ToolbeltFix
 
                 for (int i = 10; i < _slotDataRef(__instance).Count; i++)
                 {
-                    MiniGuid referenceId = _hotkeysRef(hotkeyController)[i - 10].ReferenceId;
+                    HotkeyData hotkeyData = _hotkeysRef(hotkeyController)[i - 10];
+
+                    MiniGuid referenceId = hotkeyData.ReferenceId;
                     StorageSlot<IPickupable> storageSlot = _slotDataRef(__instance)[i];
 
                     if (storageSlot.Objects.Count == 0 && !referenceId.IsDefault() && referenceId.Equals(pickupable.ReferenceId))
@@ -591,7 +630,9 @@ namespace ToolbeltFix
 
                 for (int i = 10; i < _slotDataRef(__instance).Count; i++)
                 {
-                    CraftingType craftingType = _hotkeysRef(hotkeyController)[i - 10].CraftingType.Value;
+                    HotkeyData hotkeyData = _hotkeysRef(hotkeyController)[i - 10];
+
+                    CraftingType craftingType = hotkeyData.CraftingType.Value;
                     StorageSlot<IPickupable> storageSlot = _slotDataRef(__instance)[i];
 
                     if (storageSlot.Objects.Count == 0 && !craftingType.Equals(CraftingType.Empty) && (bool)CheckTypesMatch.Invoke(__instance, new object[] { craftingType, pickupable.CraftingType.InteractiveType, pickupable.CraftingType.AttributeType }))
@@ -882,6 +923,7 @@ namespace ToolbeltFix
                         {
                             storageSlot = __instance.FindSlot(pickupable.CraftingType.InteractiveType, AttributeType.None);
                         }
+
                         if (storageSlot != null)
                         {
                             _selectedSlotRef(__instance) = storageSlot;
@@ -996,53 +1038,22 @@ namespace ToolbeltFix
         [HarmonyPatch(typeof(SlotStorageAudio), "SlotStorage_Pushed")]
         private class SlotStorageAudio_SlotStorage_Pushed_Patch
         {
-            private static readonly AccessTools.FieldRef<SlotStorageAudio, AudioClip> _storedClipRef = AccessTools.FieldRefAccess<SlotStorageAudio, AudioClip>("_storedClip");
-            private static readonly AccessTools.FieldRef<SlotStorageAudio, AudioClip> _fullClipRef = AccessTools.FieldRefAccess<SlotStorageAudio, AudioClip>("_fullClip");
-
-            private static bool Prefix(SlotStorageAudio __instance, bool success)
+            private static bool Prefix()
             {
                 if (!enabled) return true;
 
-                try
-                {
-                    if (LevelLoader.IsLoading() || silentSlotStorageTransfer)
-                    {
-                        return false;
-                    }
-                    AudioManager.GetAudioPlayer().Play3D(success ? _storedClipRef(__instance) : _fullClipRef(__instance), __instance.transform.position, AudioMixerChannels.FX, AudioRollOffDistance.VeryNear, AudioPlayMode.Single);
-                    return false;
-                }
-                catch (Exception e)
-                {
-                    logger.LogException(e);
-                    return true;
-                }
+                return !silentSlotStorageTransfer;
             }
         }
 
         [HarmonyPatch(typeof(SlotStorageAudio), "SlotStorage_Popped")]
         private class SlotStorageAudio_SlotStorage_Popped_Patch
         {
-            private static readonly AccessTools.FieldRef<SlotStorageAudio, AudioClip> _poppedClipRef = AccessTools.FieldRefAccess<SlotStorageAudio, AudioClip>("_poppedClip");
-
-            private static bool Prefix(SlotStorageAudio __instance)
+            private static bool Prefix()
             {
                 if (!enabled) return true;
 
-                try
-                {
-                    if (LevelLoader.IsLoading() || silentSlotStorageTransfer)
-                    {
-                        return false;
-                    }
-                    AudioManager.GetAudioPlayer().Play3D(_poppedClipRef(__instance), __instance.transform.position, AudioMixerChannels.FX, AudioRollOffDistance.VeryNear, AudioPlayMode.Single);
-                    return false;
-                }
-                catch (Exception e)
-                {
-                    logger.LogException(e);
-                    return true;
-                }
+                return !silentSlotStorageTransfer;
             }
         }
 
@@ -1359,7 +1370,7 @@ namespace ToolbeltFix
                     CraftingType craftingType = _hotkeysRef(__instance)[number].CraftingType.Value;
                     IPickupable currentObject = _playerRef(__instance).Holder.CurrentObject;
 
-                    if (referenceId.IsDefault() || !currentObject.IsNullOrDestroyed() && currentObject.CraftingType.Equals(craftingType))
+                    if (referenceId.IsDefault() || !currentObject.IsNullOrDestroyed() && currentObject.ReferenceId.Equals(referenceId))
                     {
                         return false;
                     }
@@ -1369,7 +1380,9 @@ namespace ToolbeltFix
 
                     if (!pickupable.IsNullOrDestroyed() && (currentObject.IsNullOrDestroyed() || storage.CanPush(currentObject)))
                     {
-                        _playerRef(__instance).Holder.ReplicatedSelect(pickupable);
+                        storage.ReplicatedSelect(pickupable);
+                        //_playerRef(__instance).Holder.ReplicatedSelect(pickupable);
+
                         IList<IList<InventoryData>> inventoryData = GetInventoryData.Invoke(_inventoryRadialMenuRef(__instance).Inventory, null) as IList<IList<InventoryData>>;
                         _inventoryRadialMenuRef(__instance).Initialize(inventoryData);
                         _inventoryRadialMenuRef(__instance).Refresh();
