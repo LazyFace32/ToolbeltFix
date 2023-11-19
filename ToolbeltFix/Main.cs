@@ -342,9 +342,15 @@ namespace ToolbeltFix
 #if DEBUG
             if (!value && settings.simulateReleaseOnToggle)
             {
-                Timing.RunCoroutine(ToggleFailedNotification(modEntry), Segment.RealtimeUpdate);
-                modEntry.Enabled = true;
+                if (notificationHandler != null)
+                {
+                    Timing.KillCoroutines(notificationHandler);
+                    modEntry.CustomRequirements = originalNotificationMessage;
+                }
 
+                originalNotificationMessage = modEntry.CustomRequirements;
+                notificationHandler = Timing.RunCoroutine(ToggleFailedNotification(modEntry), Segment.RealtimeUpdate);
+                modEntry.Enabled = !value;
                 return false;
             }
 
@@ -357,8 +363,15 @@ namespace ToolbeltFix
 #else
             if (StrandedWorld.Instance || PlayerRegistry.AllPlayers.Count > 0)
             {
-                Timing.RunCoroutine(ToggleFailedNotification(modEntry), Segment.RealtimeUpdate);
-                modEntry.Enabled = true;
+                if (notificationHandler != null)
+                {
+                    Timing.KillCoroutines(notificationHandler);
+                    modEntry.CustomRequirements = originalNotificationMessage;
+                }
+
+                originalNotificationMessage = modEntry.CustomRequirements;
+                notificationHandler = Timing.RunCoroutine(ToggleFailedNotification(modEntry), Segment.RealtimeUpdate);
+                modEntry.Enabled = !value;
                 return false;
             }
 #endif
