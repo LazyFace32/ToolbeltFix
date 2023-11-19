@@ -23,10 +23,14 @@ namespace ToolbeltFix
 {
     public class Settings : UnityModManager.ModSettings, IDrawable
     {
-        [Draw("Remember Toolbelt", Height = 15)] public bool rememberToolbelt = false;
-        [Draw("Always Show Hotkey Bar", Height = 15)] public bool alwaysShowHotkeyBar = false;
-        [Draw("Stack Transfer", Height = 15)] public bool stackTransfer = false;
-        [Draw("Quick Drop", Height = 15)] public bool quickDrop = true;
+        [Draw("Remember Toolbelt", Height = 15, Tooltip = "   Remember the item type stored in a toolbelt slot even if the item breaks or is dropped.")]
+        public bool rememberToolbelt = false;
+        [Draw("Always Show Hotkey Bar", Height = 15)]
+        public bool alwaysShowHotkeyBar = false;
+        [Draw("Stack Transfer", Height = 15, Tooltip = "   Hold right click on a stack of items to transfer it from one storage to another.")]
+        public bool stackTransfer = false;
+        [Draw("Quick Drop", Height = 15, Tooltip = "   Right click an item in your inventory to drop it.")]
+        public bool quickDrop = true;
 
         [Space(10)]
         [Header("Cheats")]
