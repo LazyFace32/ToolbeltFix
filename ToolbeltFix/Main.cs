@@ -12,9 +12,10 @@ using System.Linq;
 using System.Reflection;
 using UnityEngine;
 using UnityModManagerNet;
+#if DEBUG
 using Beam.Developer.UI;
 using Beam.Developer;
-#if DEBUG
+using Beam.Serialization;
 using UnityEngine.UI;
 #endif
 
@@ -42,6 +43,7 @@ namespace ToolbeltFix
         [Space(10)]
         [Draw("Simulate Release OnToggle", Height = 15)] public bool simulateReleaseOnToggle = false;
         [Draw("Max Displayed Items", Min = 0, Max = 50, Width = 400, Type = DrawType.Slider)] public int maxDisplayedItems = 4;
+        [Draw("Drop Overflow Items", Height = 15)] public bool dropOverflowItems = false;
 #endif
 
         private bool alwaysShowHotkeyBarOld;
@@ -647,7 +649,7 @@ namespace ToolbeltFix
                     MiniGuid referenceId = hotkeyData.ReferenceId;
                     StorageSlot<IPickupable> storageSlot = _slotDataRef(__instance)[i];
 
-                    if (storageSlot.Objects.Count == 0 && !referenceId.IsDefault() && referenceId.Equals(pickupable.ReferenceId))
+                    if (storageSlot.Objects.Count == 0 && referenceId.Equals(pickupable.ReferenceId))
                     {
                         if (assign)
                         {
@@ -657,20 +659,23 @@ namespace ToolbeltFix
                     }
                 }
 
-                for (int i = 10; i < _slotDataRef(__instance).Count; i++)
+                if (_loadStateRef(__instance).IsLoaded())
                 {
-                    HotkeyData hotkeyData = _hotkeysRef(hotkeyController)[i - 10];
-
-                    CraftingType craftingType = hotkeyData.CraftingType.Value;
-                    StorageSlot<IPickupable> storageSlot = _slotDataRef(__instance)[i];
-
-                    if (storageSlot.Objects.Count == 0 && !craftingType.Equals(CraftingType.Empty) && (bool)CheckTypesMatch.Invoke(__instance, new object[] { craftingType, pickupable.CraftingType.InteractiveType, pickupable.CraftingType.AttributeType }))
+                    for (int i = 10; i < _slotDataRef(__instance).Count; i++)
                     {
-                        if (assign)
+                        HotkeyData hotkeyData = _hotkeysRef(hotkeyController)[i - 10];
+
+                        CraftingType craftingType = hotkeyData.CraftingType.Value;
+                        StorageSlot<IPickupable> storageSlot = _slotDataRef(__instance)[i];
+
+                        if (storageSlot.Objects.Count == 0 && (bool)CheckTypesMatch.Invoke(__instance, new object[] { craftingType, pickupable.CraftingType.InteractiveType, pickupable.CraftingType.AttributeType }))
                         {
-                            storageSlot.CraftingType = new CraftingType(pickupable.CraftingType.AttributeType, pickupable.CraftingType.InteractiveType);
+                            if (assign)
+                            {
+                                storageSlot.CraftingType = new CraftingType(pickupable.CraftingType.AttributeType, pickupable.CraftingType.InteractiveType);
+                            }
+                            return storageSlot;
                         }
-                        return storageSlot;
                     }
                 }
 
@@ -679,6 +684,7 @@ namespace ToolbeltFix
                     return null;
                 }
             }
+
             for (int i = 0; i < 10; i++)
             {
                 StorageSlot<IPickupable> storageSlot = _slotDataRef(__instance)[i];
@@ -691,10 +697,10 @@ namespace ToolbeltFix
                     }
                 }
             }
-            for (int j = 0; j < _slotDataRef(__instance).Count; j++)
+            for (int j = 0; j < 10; j++)
             {
                 StorageSlot<IPickupable> storageSlot2 = _slotDataRef(__instance)[j];
-                if (storageSlot2.Objects.Count == 0 && (j < 10 || _loadStateRef(__instance).IsLoading()))
+                if (storageSlot2.Objects.Count == 0)
                 {
                     if (assign)
                     {
@@ -1058,6 +1064,69 @@ namespace ToolbeltFix
                 }
             }
         }
+
+#if DEBUG
+        [HarmonyPatch(typeof(SlotStorage), "OrderedPush")]
+        private class SlotStorage_OrderedPush_Patch
+        {
+            private static readonly AccessTools.FieldRef<SlotStorage, Transform> _storageContainerRef = AccessTools.FieldRefAccess<SlotStorage, Transform>("_storageContainer");
+            private static readonly AccessTools.FieldRef<SlotStorage, LoadState> _loadStateRef = AccessTools.FieldRefAccess<SlotStorage, LoadState>("_loadState");
+
+            private static bool Prefix(SlotStorage __instance, List<IPickupable> items, JObject slotsData)
+            {
+                if (!Enabled) return true;
+
+                try
+                {
+                    if (!__instance.Name.Equals("INVENTORY_MENU_BACKPACK_TITLE")) return true;
+
+                    IDynamicParentProvider _dynamicParenter = UnityEngine.Object.FindObjectOfType<StrandedWorld>();
+                    int numfailedLoadedPickupables = 0;
+
+                    for (int i = 0; i < slotsData.Children.Count; i++)
+                    {
+                        JObject jobject = slotsData.Children[i];
+                        if (jobject.IsValid() && !jobject.IsNull())
+                        {
+                            for (int j = 0; j < jobject.Children.Count; j++)
+                            {
+                                IPickupable pickupable = items.FirstOrDefault_NonAlloc((IPickupable itm, MiniGuid referenceId) => itm.ReferenceId.Equals(referenceId), Prefabs.GetReferenceId(jobject.Children[j], true));
+                                if (pickupable.IsNullOrDestroyed())
+                                {
+                                    Debug.LogError(string.Format("Slot Storage {0} Load - Unable to find reference item {1}", __instance.ReferenceId, Prefabs.GetReferenceId(jobject.Children[j], true)));
+                                }
+                                if (!__instance.Push(pickupable))
+                                {
+                                    Logger.Warning("Could not push " + pickupable + " to storage. Not enough room.");
+
+                                    if (Settings.dropOverflowItems)
+                                    {
+                                        pickupable.Release();
+                                        pickupable.transform.parent = null;
+                                        pickupable.TransformParent = _dynamicParenter?.GetParent();
+                                        pickupable.transform.position = new Vector3(_storageContainerRef(__instance).position.x, _storageContainerRef(__instance).position.y + numfailedLoadedPickupables * 1.5f, _storageContainerRef(__instance).position.z);
+                                        pickupable.Parent();
+                                        pickupable.Hold(false);
+                                        pickupable.SetOwner(null);
+                                    }
+
+                                    numfailedLoadedPickupables++;
+                                }
+                            }
+                        }
+                    }
+                    _loadStateRef(__instance) = LoadState.Loaded;
+
+                    return false;
+                }
+                catch (Exception e)
+                {
+                    Logger.LogException(e);
+                    return true;
+                }
+            }
+        }
+#endif
 
         [HarmonyPatch(typeof(SlotStorageAudio), "SlotStorage_Pushed")]
         private class SlotStorageAudio_SlotStorage_Pushed_Patch
@@ -1649,6 +1718,22 @@ namespace ToolbeltFix
                     UpdateLevel.Invoke(__instance, null);
 
                     JObject hotkeysData = data.GetField("Hotkeys");
+
+                    for (int i = 0; i < hotkeysData.Children.Count; i++)
+                    {
+                        JObject jobject = hotkeysData.Children[i];
+                        bool value = jobject.GetField("Locked").GetValue<bool>();
+                        if (value)
+                        {
+                            break;
+                        }
+
+                        MiniGuid miniGuid = jobject.GetField("ReferenceId").GetValue<string>().ToMiniGuid();
+
+                        _hotkeysRef(__instance)[i].ReferenceId = miniGuid;
+                        _hotkeysRef(__instance)[i].Locked.Value = value;
+                    }
+
                     LevelLoader.CurrentLoader.DeferredLoading.Add(() => Timing.RunCoroutine(DeferredLoad(__instance, hotkeysData)));
                     return false;
                 }
@@ -1688,49 +1773,49 @@ namespace ToolbeltFix
                 for (int i = 0; i < hotkeysData.Children.Count; i++)
                 {
                     JObject jobject = hotkeysData.Children[i];
-                    bool value = jobject.GetField("Locked").GetValue<bool>();
-                    if (value)
+                    if (_hotkeysRef(__instance)[i].Locked.Value)
                     {
                         break;
                     }
-
-                    _hotkeysRef(__instance)[i].Locked.Value = value;
-
-                    MiniGuid miniGuid = jobject.GetField("ReferenceId").GetValue<string>().ToMiniGuid();
-                    CraftingType craftingType = new CraftingType(AttributeType.None, InteractiveType.None);
-                    JObject craftingTypeData = jobject.GetField("CraftingType");
-
-                    if (craftingTypeData != null && !craftingTypeData.IsNull())
+                    if (_hotkeysRef(__instance)[i].ReferenceId.IsDefault())
                     {
-                        craftingType.Load(craftingTypeData);
+                        continue;
                     }
 
-                    if (!miniGuid.IsDefault())
+                    IPickupable pickupable = list.FirstOrDefault_NonAlloc((IPickupable o, MiniGuid referenceId) => o.ReferenceId.Equals(referenceId), _hotkeysRef(__instance)[i].ReferenceId);
+
+                    if (!pickupable.IsNullOrDestroyed())
                     {
-                        IPickupable pickupable = list.FirstOrDefault_NonAlloc((IPickupable o, MiniGuid referenceId) => o.ReferenceId.Equals(referenceId), miniGuid);
+                        _hotkeysRef(__instance)[i].ReferenceId = pickupable.ReferenceId;
+                        _hotkeysRef(__instance)[i].CraftingType.Value = pickupable.CraftingType;
 
-                        if (!pickupable.IsNullOrDestroyed())
+                        _iconRef(kbHotkeyElements[i]).Color = hotkeyElementColor;
+                        if (i < dpHotkeyElements.Count) _iconRef(dpHotkeyElements[i]).Color = hotkeyElementColor;
+
+                        if (!pickupable.Equals(_playerRef(__instance).Holder.CurrentObject))
                         {
-                            _hotkeysRef(__instance)[i].ReferenceId = pickupable.ReferenceId;
-                            _hotkeysRef(__instance)[i].CraftingType.Value = pickupable.CraftingType;
-
-                            _iconRef(kbHotkeyElements[i]).Color = hotkeyElementColor;
-                            if (i < dpHotkeyElements.Count) _iconRef(dpHotkeyElements[i]).Color = hotkeyElementColor;
-
-                            if (!pickupable.Equals(_playerRef(__instance).Holder.CurrentObject))
-                            {
-                                Pop(storage, pickupable, true);
-                                hotkeyPickupables.Add(i, pickupable);
-                            }
+                            Pop(storage, pickupable, true);
+                            hotkeyPickupables.Add(i, pickupable);
                         }
-                        else if (Settings.rememberToolbelt)
+                    }
+                    else if (Settings.rememberToolbelt)
+                    {
+                        CraftingType craftingType = new CraftingType(AttributeType.None, InteractiveType.None);
+                        JObject craftingTypeData = jobject.GetField("CraftingType");
+
+                        if (craftingTypeData != null && !craftingTypeData.IsNull())
                         {
-                            _hotkeysRef(__instance)[i].ReferenceId = miniGuid;
-                            _hotkeysRef(__instance)[i].CraftingType.Value = craftingType;
-
-                            _iconRef(kbHotkeyElements[i]).Color = hotkeyElementEmptyColor;
-                            if (i < dpHotkeyElements.Count) _iconRef(dpHotkeyElements[i]).Color = hotkeyElementEmptyColor;
+                            craftingType.Load(craftingTypeData);
                         }
+
+                        _hotkeysRef(__instance)[i].CraftingType.Value = craftingType;
+
+                        _iconRef(kbHotkeyElements[i]).Color = hotkeyElementEmptyColor;
+                        if (i < dpHotkeyElements.Count) _iconRef(dpHotkeyElements[i]).Color = hotkeyElementEmptyColor;
+                    }
+                    else
+                    {
+                        _hotkeysRef(__instance)[i].ReferenceId = default;
                     }
                 }
 
