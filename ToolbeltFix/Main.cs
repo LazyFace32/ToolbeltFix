@@ -967,18 +967,14 @@ namespace ToolbeltFix
 
                     if (_selectedSlotRef(__instance) == null || _selectedSlotRef(__instance).Objects.Count == 0)
                     {
-                        StorageSlot<IPickupable> storageSlot = __instance.FindSlot(pickupable.CraftingType);
-                        if (storageSlot == null)
+                        _selectedSlotRef(__instance) = __instance.FindSlot(pickupable.CraftingType);
+
+                        if (_selectedSlotRef(__instance) == null)
                         {
-                            storageSlot = __instance.FindSlot(pickupable.CraftingType.InteractiveType, AttributeType.None);
+                            _selectedSlotRef(__instance) = __instance.FindSlot(pickupable.CraftingType.InteractiveType, AttributeType.None);
                         }
 
-                        if (storageSlot != null)
-                        {
-                            _selectedSlotRef(__instance) = storageSlot;
-                        }
-
-                        if ((storageSlot == null || _indexRef(storageSlot) > 9) && PlayerRegistry.LocalPlayer.IsValid())
+                        if ((_selectedSlotRef(__instance) == null || _indexRef(_selectedSlotRef(__instance)) > 9) && PlayerRegistry.LocalPlayer.IsValid())
                         {
                             HotkeyController hotkeyController = PlayerRegistry.LocalPlayer.Hotkeys;
 
@@ -987,7 +983,7 @@ namespace ToolbeltFix
                                 StorageSlot<IPickupable> hotkeySlot = _slotDataRef(__instance)[i];
                                 HotkeyData hotkeyData = _hotkeysRef(hotkeyController)[i - 10];
 
-                                if (hotkeyData.CraftingType.Value.Equals(pickupable.CraftingType) && hotkeySlot.Objects.Count == 0)
+                                if (hotkeySlot.Objects.Count == 0 && hotkeyData.CraftingType.Value.Equals(pickupable.CraftingType))
                                 {
                                     if (Settings.rememberToolbelt)
                                     {
