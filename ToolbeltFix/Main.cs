@@ -244,9 +244,11 @@ namespace ToolbeltFix
                     }
                 }
 
+                IPlayer player = PlayerRegistry.LocalPlayer;
+                Holder holder = PlayerRegistry.LocalPlayer.Holder;
+                HotkeyController hotkeyController = player.Hotkeys;
                 SlotStorage storage = PlayerRegistry.LocalPlayer.Holder.Storage as SlotStorage;
                 List<StorageSlot<IPickupable>> _slotData = AccessTools.Field(typeof(SlotStorage), "_slotData").GetValue(storage) as List<StorageSlot<IPickupable>>;
-                Holder holder = PlayerRegistry.LocalPlayer.Holder;
 
                 // i, type, count, reference Id
                 // i, si, type, count, reference Ids
@@ -283,12 +285,18 @@ namespace ToolbeltFix
                 foreach (Text text in hotkeyTexts)
                     text.text = string.Empty;
 
-                foreach (HotkeyData hotkeyData in _hotkeysRef(PlayerRegistry.LocalPlayer.Hotkeys))
+                for (int i = 0; i < _hotkeysRef(hotkeyController).Length; i++)
                 {
+                    HotkeyData hotkeyData = _hotkeysRef(hotkeyController)[i];
+
                     hotkeyTexts[0].text += string.Format("i: {0}\n", hotkeyData.Number);
-                    hotkeyTexts[1].text += string.Format("Type: {0}\n", hotkeyData.CraftingType.Value.InteractiveType);
-                    hotkeyTexts[2].text += string.Format("Locked: {0}\n", hotkeyData.Locked.Value);
-                    hotkeyTexts[3].text += string.Format("ReferenceId: {0}\n", hotkeyData.ReferenceId);
+                    if (i + 10 < storage.SlotCount)
+                    {
+                        hotkeyTexts[1].text += string.Format("idx: {0}\n", _indexRef(_slotData[i + 10]));
+                    }
+                    hotkeyTexts[2].text += string.Format("Type: {0}\n", hotkeyData.CraftingType.Value.InteractiveType);
+                    hotkeyTexts[3].text += string.Format("Locked: {0}\n", hotkeyData.Locked.Value);
+                    hotkeyTexts[4].text += string.Format("ReferenceId: {0}\n", hotkeyData.ReferenceId);
                 }
             }
             catch (Exception e)
@@ -450,10 +458,10 @@ namespace ToolbeltFix
 
             hotkeyTexts = new Text[5];
             hotkeyTexts[0] = AddText(string.Empty, fontSize, new Vector2(0.02f, 0.02f), new Vector2(0.98f, 0.65f));
-            hotkeyTexts[1] = AddText(string.Empty, fontSize, new Vector2(0.04f, 0.02f), new Vector2(0.98f, 0.65f));
-            hotkeyTexts[2] = AddText(string.Empty, fontSize, new Vector2(0.16f, 0.02f), new Vector2(0.98f, 0.65f));
-            hotkeyTexts[3] = AddText(string.Empty, fontSize, new Vector2(0.225f, 0.02f), new Vector2(0.98f, 0.65f));
-            hotkeyTexts[4] = AddText(string.Empty, fontSize, new Vector2(0.45f, 0.02f), new Vector2(0.98f, 0.65f));
+            hotkeyTexts[1] = AddText(string.Empty, fontSize, new Vector2(0.045f, 0.02f), new Vector2(0.98f, 0.65f));
+            hotkeyTexts[2] = AddText(string.Empty, fontSize, new Vector2(0.082f, 0.02f), new Vector2(0.98f, 0.65f));
+            hotkeyTexts[3] = AddText(string.Empty, fontSize, new Vector2(0.205f, 0.02f), new Vector2(0.98f, 0.65f));
+            hotkeyTexts[4] = AddText(string.Empty, fontSize, new Vector2(0.27f, 0.02f), new Vector2(0.98f, 0.65f));
         }
 
         private static GameObject CreateCanvas()
@@ -771,38 +779,6 @@ namespace ToolbeltFix
                         AddMaterial.Invoke(__instance, new object[] { currentObject });
                     }
                     __result = _cachedMaterialsLookupRef(__instance);
-                    return false;
-                }
-                catch (Exception e)
-                {
-                    Logger.LogException(e);
-                    return true;
-                }
-            }
-        }
-
-        [HarmonyPatch(typeof(Holder), "Release")]
-        private class Holder_Release_Patch
-        {
-            private static readonly AccessTools.FieldRef<Holder, IPickupable> _currentObjectRef = AccessTools.FieldRefAccess<Holder, IPickupable>("_currentObject");
-
-            private static bool Prefix(Holder __instance, IPickupable pickupable)
-            {
-                if (!Enabled) return true;
-
-                try
-                {
-                    if (pickupable.IsNullOrDestroyed())
-                    {
-                        return false;
-                    }
-                    if (_currentObjectRef(__instance) == pickupable)
-                    {
-                        __instance.DropCurrent();
-                        return false;
-                    }
-
-                    Pop(__instance.Storage as SlotStorage, pickupable, true, true);
                     return false;
                 }
                 catch (Exception e)
