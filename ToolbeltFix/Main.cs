@@ -1117,22 +1117,46 @@ namespace ToolbeltFix
         [HarmonyPatch(typeof(SlotStorageAudio), "SlotStorage_Pushed")]
         private class SlotStorageAudio_SlotStorage_Pushed_Patch
         {
-            private static bool Prefix()
+            private static readonly AccessTools.FieldRef<SlotStorageAudio, ISlotStorage<IPickupable>> _slotStorageRef = AccessTools.FieldRefAccess<SlotStorageAudio, ISlotStorage<IPickupable>>("_slotStorage");
+
+            private static bool Prefix(SlotStorageAudio __instance)
             {
                 if (!Enabled) return true;
 
-                return !silentSlotStorageTransfer;
+                try
+                {
+                    if (!_slotStorageRef(__instance).Name.Equals("INVENTORY_MENU_BACKPACK_TITLE")) return true;
+
+                    return !silentSlotStorageTransfer;
+                }
+                catch (Exception e)
+                {
+                    Logger.LogException(e);
+                    return true;
+                }
             }
         }
 
         [HarmonyPatch(typeof(SlotStorageAudio), "SlotStorage_Popped")]
         private class SlotStorageAudio_SlotStorage_Popped_Patch
         {
-            private static bool Prefix()
+            private static readonly AccessTools.FieldRef<SlotStorageAudio, ISlotStorage<IPickupable>> _slotStorageRef = AccessTools.FieldRefAccess<SlotStorageAudio, ISlotStorage<IPickupable>>("_slotStorage");
+
+            private static bool Prefix(SlotStorageAudio __instance)
             {
                 if (!Enabled) return true;
 
-                return !silentSlotStorageTransfer;
+                try
+                {
+                    if (!_slotStorageRef(__instance).Name.Equals("INVENTORY_MENU_BACKPACK_TITLE")) return true;
+
+                    return !silentSlotStorageTransfer;
+                }
+                catch (Exception e)
+                {
+                    Logger.LogException(e);
+                    return true;
+                }
             }
         }
 
