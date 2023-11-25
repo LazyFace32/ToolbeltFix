@@ -260,7 +260,7 @@ namespace ToolbeltFix
                 currentObjectTexts[0].text += string.Format("i: {0}\n", 0);
                 currentObjectTexts[1].text += string.Format("Type: {0}\n", holder.CurrentObject?.CraftingType.InteractiveType);
                 currentObjectTexts[2].text += string.Format("Count: {0}\n", holder.CurrentObject.IsNullOrDestroyed() ? 0 : 1);
-                currentObjectTexts[3].text += string.Format("ReferenceId: {0}\n", holder.CurrentObject?.ReferenceId);
+                currentObjectTexts[3].text += string.Format("ReferenceId: {0}\n", MiniGuidToString(holder.CurrentObject?.ReferenceId));
 
 
                 foreach (Text text in storageTexts)
@@ -275,7 +275,7 @@ namespace ToolbeltFix
 
                     IEnumerable<IPickupable> items = _slotData[i].Objects.Take(Settings.maxDisplayedItems);
 
-                    storageTexts[4].text += string.Format("ReferenceId: {0}\n", items.Join(item => item.ReferenceId.ToString(), ", ") + (items.Count() < _slotData[i].Objects.Count ? "..." : ""));
+                    storageTexts[4].text += string.Format("ReferenceId: {0}\n", items.Join(item => MiniGuidToString(item.ReferenceId), ", ") + (items.Count() < _slotData[i].Objects.Count ? "..." : ""));
                 }
 
                 storageTexts[0].text += string.Format("\n\nSelected: {0}", _selectedSlotRef(storage) != null ? _indexRef(_selectedSlotRef(storage)) : -1);
@@ -296,7 +296,7 @@ namespace ToolbeltFix
                     }
                     hotkeyTexts[2].text += string.Format("Type: {0}\n", hotkeyData.CraftingType.Value.InteractiveType);
                     hotkeyTexts[3].text += string.Format("Locked: {0}\n", hotkeyData.Locked.Value);
-                    hotkeyTexts[4].text += string.Format("ReferenceId: {0}\n", hotkeyData.ReferenceId);
+                    hotkeyTexts[4].text += string.Format("ReferenceId: {0}\n", MiniGuidToString(hotkeyData.ReferenceId));
                 }
             }
             catch (Exception e)
@@ -312,6 +312,14 @@ namespace ToolbeltFix
         {
             return DeveloperConsolePresenter.Instance && DeveloperConsolePresenter_viewRef(DeveloperConsolePresenter.Instance).Visible ||
                 Singleton<TestingConsole>.Instance && TestingConsole_openRef(Singleton<TestingConsole>.Instance);
+        }
+
+        private static string MiniGuidToString(MiniGuid? miniGuid)
+        {
+            if (miniGuid == null) return null;
+            string str = miniGuid.ToString();
+
+            return str.Substring(0, str.LastIndexOf("-"));
         }
 
         private static string GetPath(Transform transform, string path = "")
