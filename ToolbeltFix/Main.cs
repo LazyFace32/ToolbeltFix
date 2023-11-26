@@ -1826,10 +1826,17 @@ namespace ToolbeltFix
                             craftingType.Load(craftingTypeData);
                         }
 
-                        _hotkeysRef(__instance)[i].CraftingType.Value = craftingType;
+                        if (!craftingType.Equals(CraftingType.Empty))
+                        {
+                            _hotkeysRef(__instance)[i].CraftingType.Value = craftingType;
 
-                        _iconRef(kbHotkeyElements[i]).Color = hotkeyElementEmptyColor;
-                        if (i < dpHotkeyElements.Count) _iconRef(dpHotkeyElements[i]).Color = hotkeyElementEmptyColor;
+                            _iconRef(kbHotkeyElements[i]).Color = hotkeyElementEmptyColor;
+                            if (i < dpHotkeyElements.Count) _iconRef(dpHotkeyElements[i]).Color = hotkeyElementEmptyColor;
+                        }
+                        else
+                        {
+                            _hotkeysRef(__instance)[i].ReferenceId = default;
+                        }
                     }
                     else
                     {
