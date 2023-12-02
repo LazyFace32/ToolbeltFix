@@ -114,7 +114,7 @@ namespace ToolbeltFix
         private static readonly MethodInfo OnPopped = AccessTools.Method(typeof(SlotStorage), "OnPopped");
 
         private static readonly Dictionary<StorageRadialMenuPresenter, StorageMenuPresenter> storagePresenters = new Dictionary<StorageRadialMenuPresenter, StorageMenuPresenter>();
-        private static InventoryHotkeyComparer InventoryHotkeyComparison { get; } = new InventoryHotkeyComparer();
+        private static HotkeyComparer HotkeyComparison { get; } = new HotkeyComparer();
 
         internal static Color hotkeyElementEmptyColor = new Color(0.4f, 0.4f, 0.4f, 0.65f);
         internal static Color hotkeyElementColor = Color.white;
@@ -806,7 +806,7 @@ namespace ToolbeltFix
 
                 try
                 {
-                    foreach (StorageSlot<IPickupable> storageSlot in GetSlots(_playerRef(__instance).Inventory.GetSlotStorage() as SlotStorage, InventoryHotkeyComparison, StorageSlot<IPickupable>.QuantityComparison))
+                    foreach (StorageSlot<IPickupable> storageSlot in GetSlots(_playerRef(__instance).Inventory.GetSlotStorage() as SlotStorage, StorageSlot<IPickupable>.QuantityComparison, HotkeyComparison))
                     {
                         foreach (IPickupable obj in storageSlot.Objects)
                         {
@@ -2021,28 +2021,16 @@ namespace ToolbeltFix
             }
         }
 
-        public class InventoryHotkeyComparer : IComparer<StorageSlot<IPickupable>>
+        public class HotkeyComparer : IComparer<StorageSlot<IPickupable>>
         {
             private readonly AccessTools.FieldRef<StorageSlot<IPickupable>, int> _indexRef = AccessTools.FieldRefAccess<StorageSlot<IPickupable>, int>("_index");
 
             public int Compare(StorageSlot<IPickupable> a, StorageSlot<IPickupable> b)
             {
-                int indexA = _indexRef(a) - (_indexRef(a) < 10 ? 0 : 20);
-                int indexB = _indexRef(b) - (_indexRef(b) < 10 ? 0 : 20);
+                int indexA = _indexRef(a) < 10 ? 0 : 20 - _indexRef(a);
+                int indexB = _indexRef(b) < 10 ? 0 : 20 - _indexRef(b);
 
-                if (b == null)
-                {
-                    return 1;
-                }
-                if (indexA > indexB)
-                {
-                    return 1;
-                }
-                if (indexA < indexB)
-                {
-                    return -1;
-                }
-                return 0;
+                return indexA - indexB;
             }
         }
     }
