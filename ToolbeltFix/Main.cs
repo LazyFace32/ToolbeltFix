@@ -131,6 +131,9 @@ namespace ToolbeltFix
         private static readonly Dictionary<HotkeyController, Dictionary<HotkeyData, MiniGuid>> _reserved = new Dictionary<HotkeyController, Dictionary<HotkeyData, MiniGuid>>();
 #endif
 
+        private static EventManager.EventDelegate<QuickAccessSlotUnlockedEvent> EventManager_QuickAccessSlotUnlocked_Event;
+        private static EventManager.EventDelegate<OptionsAppliedEvent> EventManager_OptionsApplied_Event;
+
         internal static Color hotkeyElementEmptyColor = new Color(0.4f, 0.4f, 0.4f, 0.65f);
         internal static Color hotkeyElementColor = Color.white;
 
@@ -1477,17 +1480,50 @@ namespace ToolbeltFix
         [HarmonyPatch(typeof(HotkeyController), nameof(HotkeyController.SetPlayer))]
         private class HotkeyController_SetPlayer_Patch
         {
-            private static void Prefix(HotkeyController __instance, IPlayer player)
+            private static readonly AccessTools.FieldRef<HotkeyController, InventoryRadialMenuPresenter> _inventoryRadialMenuRef = AccessTools.FieldRefAccess<HotkeyController, InventoryRadialMenuPresenter>("_inventoryRadialMenu");
+            private static readonly AccessTools.FieldRef<HotkeyController, HotkeyData[]> _hotkeysRef = AccessTools.FieldRefAccess<HotkeyController, HotkeyData[]>("_hotkeys");
+            private static readonly AccessTools.FieldRef<HotkeyController, HotkeyView> _viewRef = AccessTools.FieldRefAccess<HotkeyController, HotkeyView>("_view");
+            private static readonly AccessTools.FieldRef<HotkeyController, IPlayer> _playerRef = AccessTools.FieldRefAccess<HotkeyController, IPlayer>("_player");
+
+            private static readonly MethodInfo EventManager_QuickAccessSlotUnlocked = AccessTools.Method(typeof(HotkeyController), "EventManager_QuickAccessSlotUnlocked");
+            private static readonly MethodInfo EventManager_OptionsApplied = AccessTools.Method(typeof(HotkeyController), "EventManager_OptionsApplied");
+            private static readonly MethodInfo SubscribeToInputEvents = AccessTools.Method(typeof(HotkeyController), "SubscribeToInputEvents");
+            private static readonly MethodInfo Holder_Dropped = AccessTools.Method(typeof(HotkeyController), "Holder_Dropped");
+            private static readonly MethodInfo LoadOptions = AccessTools.Method(typeof(HotkeyController), "LoadOptions");
+
+            private static bool Prefix(HotkeyController __instance, IPlayer player)
             {
-                if (!Enabled) return;
+                if (!Enabled) return true;
 
                 try
                 {
-                    slotStorage_HotkeyController[player.Inventory.GetSlotStorage()] = __instance;
+                    _playerRef(__instance) = player;
+                    slotStorage_HotkeyController[_playerRef(__instance).Inventory.GetSlotStorage()] = __instance;
+                    PlayerUI playerUI = _playerRef(__instance).PlayerUI;
+                    _viewRef(__instance) = playerUI?.Canvas.GetComponentInChildren<HotkeyView>();
+                    if (_viewRef(__instance) == null)
+                    {
+                        if (_playerRef(__instance).IsOwner)
+                        {
+                            Debug.LogError(string.Format("HotkeyController:: No view component found! for player with id {0}", _playerRef(__instance).Id));
+                        }
+                        return false;
+                    }
+                    _viewRef(__instance).Initialize(_hotkeysRef(__instance));
+                    _playerRef(__instance).Holder.Dropped += AccessTools.MethodDelegate<Action<IPickupable>>(Holder_Dropped, __instance);
+                    _inventoryRadialMenuRef(__instance) = _playerRef(__instance).PlayerUI.GetController<InventoryRadialMenuPresenter>();
+                    SubscribeToInputEvents.Invoke(__instance, new object[] { _playerRef(__instance).Input });
+                    EventManager_QuickAccessSlotUnlocked_Event = new EventManager.EventDelegate<QuickAccessSlotUnlockedEvent>(AccessTools.MethodDelegate<Action<QuickAccessSlotUnlockedEvent>>(EventManager_QuickAccessSlotUnlocked, __instance));
+                    EventManager_OptionsApplied_Event = new EventManager.EventDelegate<OptionsAppliedEvent>(AccessTools.MethodDelegate<Action<OptionsAppliedEvent>>(EventManager_OptionsApplied, __instance));
+                    EventManager.AddListener(EventManager_QuickAccessSlotUnlocked_Event);
+                    EventManager.AddListener(EventManager_OptionsApplied_Event);
+                    LoadOptions.Invoke(__instance, null);
+                    return false;
                 }
                 catch (Exception e)
                 {
                     Logger.LogException(e);
+                    return true;
                 }
             }
         }
@@ -1499,8 +1535,6 @@ namespace ToolbeltFix
             private static readonly AccessTools.FieldRef<HotkeyController, bool> _subbedToInventoryEventsRef = AccessTools.FieldRefAccess<HotkeyController, bool>("_subbedToInventoryEvents");
             private static readonly AccessTools.FieldRef<HotkeyController, IPlayer> _playerRef = AccessTools.FieldRefAccess<HotkeyController, IPlayer>("_player");
 
-            private static readonly MethodInfo EventManager_QuickAccessSlotUnlocked = AccessTools.Method(typeof(HotkeyController), "EventManager_QuickAccessSlotUnlocked");
-            private static readonly MethodInfo EventManager_OptionsApplied = AccessTools.Method(typeof(HotkeyController), "EventManager_OptionsApplied");
             private static readonly MethodInfo UnsubscribeFromInputEvents = AccessTools.Method(typeof(HotkeyController), "UnsubscribeFromInputEvents");
             private static readonly MethodInfo Holder_Dropped = AccessTools.Method(typeof(HotkeyController), "Holder_Dropped");
 
@@ -1531,8 +1565,8 @@ namespace ToolbeltFix
                     }
                     IPlayer player = _playerRef(__instance);
                     UnsubscribeFromInputEvents.Invoke(__instance, new object[] { player?.Input });
-                    EventManager.RemoveListener(new EventManager.EventDelegate<QuickAccessSlotUnlockedEvent>(AccessTools.MethodDelegate<Action<QuickAccessSlotUnlockedEvent>>(EventManager_QuickAccessSlotUnlocked, __instance)));
-                    EventManager.RemoveListener(new EventManager.EventDelegate<OptionsAppliedEvent>(AccessTools.MethodDelegate<Action<OptionsAppliedEvent>>(EventManager_OptionsApplied, __instance)));
+                    EventManager.RemoveListener(EventManager_QuickAccessSlotUnlocked_Event);
+                    EventManager.RemoveListener(EventManager_OptionsApplied_Event);
                     return false;
                 }
                 catch (Exception e)
