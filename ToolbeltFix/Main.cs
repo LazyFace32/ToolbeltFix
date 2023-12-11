@@ -12,7 +12,11 @@ using System.Linq;
 using System.Reflection;
 using UnityEngine;
 using UnityModManagerNet;
+using Beam.Events;
 #if DEBUG
+using Beam.Developer.UI;
+using Beam.Developer;
+using Beam.Serialization;
 using UnityEngine.UI;
 #endif
 
@@ -20,29 +24,42 @@ namespace ToolbeltFix
 {
     public class Settings : UnityModManager.ModSettings, IDrawable
     {
-        [Draw("Remember Toolbelt", Height = 15)] public bool rememberToolbelt = false;
-        [Draw("Always Show Hotkey Bar", Height = 15)] public bool alwaysShowHotkeyBar = false;
-        [Draw("Stack Transfer", Height = 15)] public bool stackTransfer = false;
-        [Draw("Quick Drop", Height = 15)] public bool quickDrop = true;
+        [Draw("Remember Toolbelt", Height = 15, Tooltip = "   Remember the item type stored in a toolbelt slot even if the item breaks or is dropped.")]
+        public bool rememberToolbelt = false;
+        [Draw("Always Show Hotkey Bar", Height = 15)]
+        public bool alwaysShowHotkeyBar = false;
+        [Draw("Stack Transfer", Height = 15, Tooltip = "   Hold right click on a stack of items to transfer it from one storage to another.")]
+        public bool stackTransfer = false;
+        [Draw("Quick Drop", Height = 15, Tooltip = "   Right click an item in your inventory to drop it.")]
+        public bool quickDrop = true;
 
         [Space(10)]
         [Header("Cheats")]
         [Draw("Allow Container Crates", Height = 15)] public bool allowContainerCrates = false;
         //[Draw("Allow Large Items (Cheat)", Height = 15)] public bool allowLargeItems = false;
-        //[Draw("Allow Multiple Same Type Items", Height = 15)] public bool allowMultipleSameTypeItems = false;
 
 #if DEBUG
         [Space(10)]
         [Header("Debug")]
         [Draw("Grey", Min = 0, Max = 1, Width = 400, Type = DrawType.Slider)] public float albedo = 0.4f;
-        [Draw("A", Min = 0, Max = 1, Width = 400, Type = DrawType.Slider)] public float a = 0.65f;
+        [Draw("Alpha", Min = 0, Max = 1, Width = 400, Type = DrawType.Slider)] public float alpha = 0.65f;
 
         [Space(10)]
         [Draw("Simulate Release OnToggle", Height = 15)] public bool simulateReleaseOnToggle = false;
         [Draw("Max Displayed Items", Min = 0, Max = 50, Width = 400, Type = DrawType.Slider)] public int maxDisplayedItems = 4;
+        [Draw("Drop Overflow Items", Height = 15)] public bool dropOverflowItems = false;
 #endif
 
         private bool alwaysShowHotkeyBarOld;
+
+        public void Load()
+        {
+            alwaysShowHotkeyBarOld = alwaysShowHotkeyBar;
+
+#if DEBUG
+            Main.hotkeyElementEmptyColor = new Color(albedo, albedo, albedo, alpha);
+#endif
+        }
 
         public override void Save(UnityModManager.ModEntry modEntry)
         {
@@ -65,11 +82,6 @@ namespace ToolbeltFix
                 }
             }
         }
-
-        public void Load()
-        {
-            alwaysShowHotkeyBarOld = alwaysShowHotkeyBar;
-        }
     }
 
     public enum StorageType
@@ -85,8 +97,6 @@ namespace ToolbeltFix
     public class Main
     {
         private static readonly AccessTools.FieldRef<HotkeyController, HotkeyData[]> _hotkeysRef = AccessTools.FieldRefAccess<HotkeyController, HotkeyData[]>("_hotkeys");
-
-        private static readonly MethodInfo ClearExistingHotkey = AccessTools.Method(typeof(HotkeyController), "ClearExistingHotkey");
 
         private static readonly AccessTools.FieldRef<HotkeyElementView, UImageViewAdapter> _iconRef = AccessTools.FieldRefAccess<HotkeyElementView, UImageViewAdapter>("_icon");
 
@@ -105,15 +115,42 @@ namespace ToolbeltFix
         private static readonly MethodInfo OnPopped = AccessTools.Method(typeof(SlotStorage), "OnPopped");
 
         private static readonly Dictionary<StorageRadialMenuPresenter, StorageMenuPresenter> storagePresenters = new Dictionary<StorageRadialMenuPresenter, StorageMenuPresenter>();
+
+#if DEBUG
+        [SaveOnReload]
+        public static readonly Dictionary<ISlotStorage<IPickupable>, HotkeyController> slotStorage_HotkeyController = new Dictionary<ISlotStorage<IPickupable>, HotkeyController>();
+
+        [SaveOnReload]
+        public static readonly Dictionary<HotkeyController, Dictionary<HotkeyData, MiniGuid>> _occupied = new Dictionary<HotkeyController, Dictionary<HotkeyData, MiniGuid>>();
+        [SaveOnReload]
+        public static readonly Dictionary<HotkeyController, Dictionary<HotkeyData, MiniGuid>> _reserved = new Dictionary<HotkeyController, Dictionary<HotkeyData, MiniGuid>>();
+#else
+        private static readonly Dictionary<ISlotStorage<IPickupable>, HotkeyController> slotStorage_HotkeyController = new Dictionary<ISlotStorage<IPickupable>, HotkeyController>();
+
+        private static readonly Dictionary<HotkeyController, Dictionary<HotkeyData, MiniGuid>> _occupied = new Dictionary<HotkeyController, Dictionary<HotkeyData, MiniGuid>>();
+        private static readonly Dictionary<HotkeyController, Dictionary<HotkeyData, MiniGuid>> _reserved = new Dictionary<HotkeyController, Dictionary<HotkeyData, MiniGuid>>();
+#endif
+
+        private static EventManager.EventDelegate<QuickAccessSlotUnlockedEvent> EventManager_QuickAccessSlotUnlocked_Event;
+        private static EventManager.EventDelegate<OptionsAppliedEvent> EventManager_OptionsApplied_Event;
+
+        internal static Color hotkeyElementEmptyColor = new Color(0.4f, 0.4f, 0.4f, 0.65f);
+        internal static Color hotkeyElementColor = Color.white;
+
         private static IList<HotkeyElementView> kbHotkeyElements;
         private static IList<HotkeyElementView> dpHotkeyElements;
+
+        private static CoroutineHandle notificationHandler;
+        private static string originalNotificationMessage;
         private static bool silentSlotStorageTransfer;
 
-        private static InventoryHotkeyComparer InventoryHotkeyComparison { get; } = new InventoryHotkeyComparer();
+        private static InteractiveType InteractiveType_CONTAINER;
 
-        private static UnityModManager.ModEntry.ModLogger logger;
-        private static Settings settings;
-        private static bool enabled;
+        private static HotkeyComparer HotkeyComparison { get; } = new HotkeyComparer();
+
+        protected static UnityModManager.ModEntry.ModLogger Logger { get; private set; }
+        protected static Settings Settings { get; private set; }
+        protected static bool Enabled { get; private set; }
 
 #if DEBUG
         private static Harmony harmony;
@@ -133,12 +170,12 @@ namespace ToolbeltFix
         private static Font font;
 #endif
 
-        private static bool Load(UnityModManager.ModEntry modEntry)
+        internal static bool Load(UnityModManager.ModEntry modEntry)
         {
-            settings = UnityModManager.ModSettings.Load<Settings>(modEntry);
-            logger = modEntry.Logger;
+            Settings = UnityModManager.ModSettings.Load<Settings>(modEntry);
+            Logger = modEntry.Logger;
 
-            settings.Load();
+            Settings.Load();
 
 #if DEBUG
             harmony = new Harmony(modEntry.Info.Id);
@@ -163,11 +200,21 @@ namespace ToolbeltFix
 
             VersionChecker.CheckVersion(modEntry);
 
+            if (Enum.TryParse("CONTAINER", out InteractiveType CONTAINER))
+            {
+                InteractiveType_CONTAINER = CONTAINER;
+            }
+            else
+            {
+                InteractiveType_CONTAINER = InteractiveType.CONTAINER;
+                Logger.Error("Could not load the container crate type. This could have unexpected side effects.");
+            }
+
             return true;
         }
 
 #if DEBUG
-        private static bool Unload(UnityModManager.ModEntry modEntry)
+        internal static bool Unload(UnityModManager.ModEntry modEntry)
         {
             harmony.UnpatchAll(modEntry.Info.Id);
             return true;
@@ -183,7 +230,7 @@ namespace ToolbeltFix
 
         private static readonly AccessTools.FieldRef<SlotStorage, StorageSlot<IPickupable>> _selectedSlotRef = AccessTools.FieldRefAccess<SlotStorage, StorageSlot<IPickupable>>("_selectedSlot");
 
-        private static void OnUpdate(UnityModManager.ModEntry modEntry, float dt)
+        internal static void OnUpdate(UnityModManager.ModEntry modEntry, float dt)
         {
             try
             {
@@ -218,15 +265,21 @@ namespace ToolbeltFix
 
                 if (!worldLoaded) return;
 
-                if (Input.GetKeyDown(KeyCode.M))
-                {
-                    canvas.SetActive(!canvas.activeInHierarchy);
-                    canvasActive = canvas.activeInHierarchy;
-                }
+                IPlayer player = PlayerRegistry.LocalPlayer;
+                HotkeyController hotkeyController = player.Hotkeys;
+                Holder holder = player.Holder;
 
-                SlotStorage storage = PlayerRegistry.LocalPlayer.Holder.Storage as SlotStorage;
+                SlotStorage storage = player.Inventory.GetSlotStorage() as SlotStorage;
                 List<StorageSlot<IPickupable>> _slotData = AccessTools.Field(typeof(SlotStorage), "_slotData").GetValue(storage) as List<StorageSlot<IPickupable>>;
-                Holder holder = PlayerRegistry.LocalPlayer.Holder;
+
+                if (!IsConsoleVisible())
+                {
+                    if (Input.GetKeyDown(KeyCode.M))
+                    {
+                        canvas.SetActive(!canvas.activeInHierarchy);
+                        canvasActive = canvas.activeInHierarchy;
+                    }
+                }
 
                 // i, type, count, reference Id
                 // i, si, type, count, reference Ids
@@ -238,7 +291,7 @@ namespace ToolbeltFix
                 currentObjectTexts[0].text += string.Format("i: {0}\n", 0);
                 currentObjectTexts[1].text += string.Format("Type: {0}\n", holder.CurrentObject?.CraftingType.InteractiveType);
                 currentObjectTexts[2].text += string.Format("Count: {0}\n", holder.CurrentObject.IsNullOrDestroyed() ? 0 : 1);
-                currentObjectTexts[3].text += string.Format("ReferenceId: {0}\n", holder.CurrentObject?.ReferenceId);
+                currentObjectTexts[3].text += string.Format("ReferenceId: {0}\n", MiniGuidToString(holder.CurrentObject?.ReferenceId));
 
 
                 foreach (Text text in storageTexts)
@@ -251,30 +304,60 @@ namespace ToolbeltFix
                     storageTexts[2].text += string.Format("Type: {0}\n", _slotData[i].CraftingType.InteractiveType);
                     storageTexts[3].text += string.Format("Count: {0}\n", _slotData[i].Objects.Count);
 
-                    IEnumerable<IPickupable> items = _slotData[i].Objects.Take(settings.maxDisplayedItems);
+                    IEnumerable<IPickupable> items = _slotData[i].Objects.Take(Settings.maxDisplayedItems);
 
-                    storageTexts[4].text += string.Format("ReferenceId: {0}\n", items.Join(item => item.ReferenceId.ToString(), ", ") + (items.Count() < _slotData[i].Objects.Count ? "..." : ""));
+                    storageTexts[4].text += string.Format("ReferenceId: {0}\n", items.Join(item => MiniGuidToString(item.ReferenceId), ", ") + (items.Count() < _slotData[i].Objects.Count ? "..." : ""));
                 }
+
+                storageTexts[0].text += string.Format("\n\nSelected: {0}", _selectedSlotRef(storage) != null ? _indexRef(_selectedSlotRef(storage)) : -1);
+                storageTexts[2].text += string.Format("\n\nCount: {0}", _selectedSlotRef(storage)?.Objects.Count);
 
 
                 foreach (Text text in hotkeyTexts)
                     text.text = string.Empty;
 
-                foreach (HotkeyData hotkeyData in _hotkeysRef(PlayerRegistry.LocalPlayer.Hotkeys))
+                for (int i = 0; i < _hotkeysRef(hotkeyController).Length; i++)
                 {
-                    hotkeyTexts[0].text += string.Format("i: {0}\n", hotkeyData.Number);
-                    hotkeyTexts[1].text += string.Format("Type: {0}\n", hotkeyData.CraftingType.Value.InteractiveType);
-                    hotkeyTexts[2].text += string.Format("Locked: {0}\n", hotkeyData.Locked.Value);
-                    hotkeyTexts[3].text += string.Format("ReferenceId: {0}\n", hotkeyData.ReferenceId);
-                }
+                    HotkeyData hotkeyData = _hotkeysRef(hotkeyController)[i];
 
-                hotkeyTexts[0].text += string.Format("\n\nSelected: {0}", _selectedSlotRef(storage) != null ? _indexRef(_selectedSlotRef(storage)) : -1);
-                hotkeyTexts[2].text += string.Format("\n\nCount: {0}", _selectedSlotRef(storage)?.Objects.Count);
+                    hotkeyTexts[0].text += string.Format("i: {0}\n", hotkeyData.Number);
+                    if (i + 10 < storage.SlotCount)
+                    {
+                        hotkeyTexts[1].text += string.Format("idx: {0}\n", _indexRef(_slotData[i + 10]));
+                    }
+                    hotkeyTexts[2].text += string.Format("Type: {0}\n", hotkeyData.CraftingType.Value.InteractiveType);
+                    hotkeyTexts[3].text += string.Format("Locked: {0}\n", hotkeyData.Locked.Value);
+
+                    for (int j = 0; j < hotkeyTexts.Length - 1; j++)
+                    {
+                        hotkeyTexts[j].text += "\n";
+                    }
+
+                    hotkeyTexts[4].text += string.Format("Occupied: {0}\n", MiniGuidToString(_occupied[hotkeyController][hotkeyData]));
+                    hotkeyTexts[4].text += string.Format("Reserved: {0}\n", MiniGuidToString(_reserved[hotkeyController][hotkeyData]));
+                }
             }
             catch (Exception e)
             {
-                logger.LogException(e);
+                Logger.LogException(e);
             }
+        }
+
+        private static readonly AccessTools.FieldRef<DeveloperConsolePresenter, IDeveloperConsoleViewAdapter> DeveloperConsolePresenter_viewRef = AccessTools.FieldRefAccess<DeveloperConsolePresenter, IDeveloperConsoleViewAdapter>("_view");
+        private static readonly AccessTools.FieldRef<TestingConsole, bool> TestingConsole_openRef = AccessTools.FieldRefAccess<TestingConsole, bool>("_open");
+
+        private static bool IsConsoleVisible()
+        {
+            return DeveloperConsolePresenter.Instance && DeveloperConsolePresenter_viewRef(DeveloperConsolePresenter.Instance).Visible ||
+                Singleton<TestingConsole>.Instance && TestingConsole_openRef(Singleton<TestingConsole>.Instance);
+        }
+
+        private static string MiniGuidToString(MiniGuid? miniGuid)
+        {
+            if (miniGuid == null) return null;
+            string str = miniGuid.ToString();
+
+            return str.Substring(0, str.LastIndexOf("-"));
         }
 
         private static string GetPath(Transform transform, string path = "")
@@ -288,34 +371,42 @@ namespace ToolbeltFix
         }
 #endif
 
-        private static void OnGUI(UnityModManager.ModEntry modEntry)
+        internal static void OnGUI(UnityModManager.ModEntry modEntry)
         {
-            settings.Draw(modEntry);
+            Settings.Draw(modEntry);
 
             GUILayout.Space(10);
             GUILayout.Label("Created by Lazy");
         }
 
 #if DEBUG
-        public static void ApplySettings()
+        internal static void ApplySettings()
         {
             if (!worldLoaded) return;
 
-            SlotStorage storage = PlayerRegistry.LocalPlayer.Holder.Storage as SlotStorage;
-            IPickupable currentObject = PlayerRegistry.LocalPlayer.Holder.CurrentObject;
-            HotkeyController hotkeyController = PlayerRegistry.LocalPlayer.Hotkeys;
+            IPlayer player = PlayerRegistry.LocalPlayer;
+            SlotStorage storage = player.Inventory.GetSlotStorage() as SlotStorage;
+            IPickupable currentObject = player.Holder.CurrentObject;
+            HotkeyController hotkeyController = player.Hotkeys;
+
+            hotkeyElementEmptyColor = new Color(Settings.albedo, Settings.albedo, Settings.albedo, Settings.alpha);
 
             for (int i = 10; i < _slotDataRef(storage).Count; i++)
             {
                 StorageSlot<IPickupable> hotkeySlot = _slotDataRef(storage)[i];
+                HotkeyData hotkeyData = _hotkeysRef(hotkeyController)[i - 10];
 
-                if (hotkeySlot.Objects.Count == 0 && settings.rememberToolbelt)
+                if (_occupied[hotkeyController][hotkeyData].IsDefault() && !_reserved[hotkeyController][hotkeyData].IsDefault() && Settings.rememberToolbelt)
                 {
-                    _iconRef(kbHotkeyElements[i - 10]).Color = new Color(settings.albedo, settings.albedo, settings.albedo, settings.a);
-                    if (i - 10 < dpHotkeyElements.Count) _iconRef(dpHotkeyElements[i - 10]).Color = new Color(settings.albedo, settings.albedo, settings.albedo, settings.a);
+                    _iconRef(kbHotkeyElements[i - 10]).Color = hotkeyElementEmptyColor;
+                    if (i - 10 < dpHotkeyElements.Count) _iconRef(dpHotkeyElements[i - 10]).Color = hotkeyElementEmptyColor;
+                }
+                else
+                {
+                    _iconRef(kbHotkeyElements[i - 10]).Color = hotkeyElementColor;
+                    if (i - 10 < dpHotkeyElements.Count) _iconRef(dpHotkeyElements[i - 10]).Color = hotkeyElementColor;
                 }
             }
-
 
             if (!currentObject.IsNullOrDestroyed() && CanPush(storage, StorageType.Hotkeys, currentObject, false, false))
             {
@@ -325,26 +416,32 @@ namespace ToolbeltFix
                 {
                     HotkeyData hotkeyData = _hotkeysRef(hotkeyController)[_indexRef(slot) - 10];
 
-                    _iconRef(kbHotkeyElements[_indexRef(slot) - 10]).Color = Color.white;
-                    if (_indexRef(slot) - 10 < dpHotkeyElements.Count) _iconRef(dpHotkeyElements[_indexRef(slot) - 10]).Color = Color.white;
+                    _iconRef(kbHotkeyElements[_indexRef(slot) - 10]).Color = hotkeyElementColor;
+                    if (_indexRef(slot) - 10 < dpHotkeyElements.Count) _iconRef(dpHotkeyElements[_indexRef(slot) - 10]).Color = hotkeyElementColor;
                 }
             }
         }
 #endif
 
-        private static void OnSaveGUI(UnityModManager.ModEntry modEntry)
+        internal static void OnSaveGUI(UnityModManager.ModEntry modEntry)
         {
-            settings.Save(modEntry);
+            Settings.Save(modEntry);
         }
 
-        private static bool OnToggle(UnityModManager.ModEntry modEntry, bool value)
+        internal static bool OnToggle(UnityModManager.ModEntry modEntry, bool value)
         {
 #if DEBUG
-            if (!value && settings.simulateReleaseOnToggle)
+            if (!value && Settings.simulateReleaseOnToggle)
             {
-                Timing.RunCoroutine(ToggleFailedNotification(modEntry), Segment.RealtimeUpdate);
-                modEntry.Enabled = true;
+                if (notificationHandler != null)
+                {
+                    Timing.KillCoroutines(notificationHandler);
+                    modEntry.CustomRequirements = originalNotificationMessage;
+                }
 
+                originalNotificationMessage = modEntry.CustomRequirements;
+                notificationHandler = Timing.RunCoroutine(ToggleFailedNotification(modEntry), Segment.RealtimeUpdate);
+                modEntry.Enabled = !value;
                 return false;
             }
 
@@ -357,32 +454,38 @@ namespace ToolbeltFix
 #else
             if (StrandedWorld.Instance || PlayerRegistry.AllPlayers.Count > 0)
             {
-                Timing.RunCoroutine(ToggleFailedNotification(modEntry), Segment.RealtimeUpdate);
-                modEntry.Enabled = true;
+                if (notificationHandler != null)
+                {
+                    Timing.KillCoroutines(notificationHandler);
+                    modEntry.CustomRequirements = originalNotificationMessage;
+                }
+
+                originalNotificationMessage = modEntry.CustomRequirements;
+                notificationHandler = Timing.RunCoroutine(ToggleFailedNotification(modEntry), Segment.RealtimeUpdate);
+                modEntry.Enabled = !value;
                 return false;
             }
 #endif
 
             if (value)
             {
-                Options.GeneralSettings.AlwaysShowHotkeyBar = settings.alwaysShowHotkeyBar;
+                Options.GeneralSettings.AlwaysShowHotkeyBar = Settings.alwaysShowHotkeyBar;
             }
             else
             {
                 Options.GeneralSettings.AlwaysShowHotkeyBar = false;
             }
 
-            enabled = value;
+            Enabled = value;
             return true;
         }
 
-        private static IEnumerator<float> ToggleFailedNotification(UnityModManager.ModEntry modEntry)
+        internal static IEnumerator<float> ToggleFailedNotification(UnityModManager.ModEntry modEntry)
         {
-            string customRequirements = modEntry.CustomRequirements;
             modEntry.CustomRequirements = "Can only toggle from the main menu";
 
             yield return Timing.WaitForSeconds(5f);
-            modEntry.CustomRequirements = customRequirements;
+            modEntry.CustomRequirements = originalNotificationMessage;
         }
 
 #if DEBUG
@@ -407,16 +510,10 @@ namespace ToolbeltFix
 
             hotkeyTexts = new Text[5];
             hotkeyTexts[0] = AddText(string.Empty, fontSize, new Vector2(0.02f, 0.02f), new Vector2(0.98f, 0.65f));
-            hotkeyTexts[1] = AddText(string.Empty, fontSize, new Vector2(0.04f, 0.02f), new Vector2(0.98f, 0.65f));
-            hotkeyTexts[2] = AddText(string.Empty, fontSize, new Vector2(0.16f, 0.02f), new Vector2(0.98f, 0.65f));
-            hotkeyTexts[3] = AddText(string.Empty, fontSize, new Vector2(0.225f, 0.02f), new Vector2(0.98f, 0.65f));
-            hotkeyTexts[4] = AddText(string.Empty, fontSize, new Vector2(0.45f, 0.02f), new Vector2(0.98f, 0.65f));
-
-            //texta = AddText("Hello World this is some very long text to test out the limitations of the text field", fontSize, new Vector2(0.005f, 0.1f), new Vector2(0.98f, 0.98f));
-            //texta = AddText("Hello World this is some very long text to test out the limitations of the text field", fontSize, new Vector2(0.01f, 0.02f), new Vector2(0.98f, 0.98f));
-            /*textb = AddText("Text", fontSize, new Vector2(0.045f, 0.02f), new Vector2(0.98f, 0.98f));
-            textc = AddText("Text", fontSize, new Vector2(0.22f, 0.02f), new Vector2(0.98f, 0.98f));
-            textd = AddText("Text", fontSize, new Vector2(0.28f, 0.02f), new Vector2(0.98f, 0.98f));*/
+            hotkeyTexts[1] = AddText(string.Empty, fontSize, new Vector2(0.045f, 0.02f), new Vector2(0.98f, 0.65f));
+            hotkeyTexts[2] = AddText(string.Empty, fontSize, new Vector2(0.082f, 0.02f), new Vector2(0.98f, 0.65f));
+            hotkeyTexts[3] = AddText(string.Empty, fontSize, new Vector2(0.205f, 0.02f), new Vector2(0.98f, 0.65f));
+            hotkeyTexts[4] = AddText(string.Empty, fontSize, new Vector2(0.27f, 0.02f), new Vector2(0.98f, 0.65f));
         }
 
         private static GameObject CreateCanvas()
@@ -473,12 +570,9 @@ namespace ToolbeltFix
             {
                 _tempRef(__instance)[j] = _slotDataRef(__instance)[j];
             }
-            if (comparators.Length > 0)
+            foreach (IComparer<StorageSlot<IPickupable>> comparer in comparators)
             {
-                for (int k = 0; k < comparators.Length; k++)
-                {
-                    _tempRef(__instance).Sort(comparators[k]);
-                }
+                _tempRef(__instance).Sort(comparer);
             }
             int num;
             for (int i = 0; i < _tempRef(__instance).Count; i = num + 1)
@@ -509,7 +603,7 @@ namespace ToolbeltFix
             {
                 return false;
             }
-            if (!_storeOtherStorageRef(__instance) && pickupable.CraftingType.InteractiveType == InteractiveType.CONTAINER)
+            if (!_storeOtherStorageRef(__instance) && pickupable.CraftingType.InteractiveType == InteractiveType_CONTAINER)
             {
                 if (notification)
                 {
@@ -544,7 +638,7 @@ namespace ToolbeltFix
             return false;
         }
 
-        private static void Pop(SlotStorage __instance, IPickupable pickupable, bool sort = true, bool allowClearHotkey = false)
+        private static void Pop(SlotStorage __instance, IPickupable pickupable, bool sort = true, bool allowClearHotkey = true)
         {
             StorageSlot<IPickupable> storageSlot = __instance.FindSlot(pickupable);
             if (storageSlot == null)
@@ -554,15 +648,30 @@ namespace ToolbeltFix
 
             pickupable.Release();
             storageSlot.Objects.Remove(pickupable);
+
+            if (_indexRef(storageSlot) > 9 && allowClearHotkey && slotStorage_HotkeyController.TryGetValue(__instance, out HotkeyController hotkeyController))
+            {
+                HotkeyData hotkeyData = _hotkeysRef(hotkeyController)[_indexRef(storageSlot) - 10];
+
+                _occupied[hotkeyController][hotkeyData] = default;
+
+                if (storageSlot.Objects.Count == 0)
+                {
+                    if (Settings.rememberToolbelt)
+                    {
+                        _iconRef(kbHotkeyElements[_indexRef(storageSlot) - 10]).Color = hotkeyElementEmptyColor;
+                        if (_indexRef(storageSlot) - 10 < dpHotkeyElements.Count) _iconRef(dpHotkeyElements[_indexRef(storageSlot) - 10]).Color = hotkeyElementEmptyColor;
+                    }
+                    else
+                    {
+                        ClearHotkey(hotkeyController, hotkeyData);
+                    }
+                }
+            }
             if (storageSlot.Objects.Count == 0)
             {
                 storageSlot.CraftingType = new CraftingType(AttributeType.None, InteractiveType.None);
-
-                if (_indexRef(storageSlot) > 9 && allowClearHotkey && !settings.rememberToolbelt && PlayerRegistry.LocalPlayer.IsValid())
-                {
-                    ClearExistingHotkey.Invoke(PlayerRegistry.LocalPlayer.Hotkeys, new object[] { pickupable.ReferenceId });
-                }
-                else if (sort)
+                if (sort)
                 {
                     __instance.SortSlots();
                 }
@@ -578,14 +687,15 @@ namespace ToolbeltFix
                 StorageSlot<IPickupable> slot = GetSlot(__instance, storageType, pickupable, true);
                 if (slot != null)
                 {
-                    if (_indexRef(slot) > 9 && _loadStateRef(__instance).IsLoaded() && PlayerRegistry.LocalPlayer.IsValid())
+                    if (_indexRef(slot) > 9 && !_loadStateRef(__instance).IsLoading() && slotStorage_HotkeyController.TryGetValue(__instance, out HotkeyController hotkeyController))
                     {
-                        HotkeyController hotkeyController = PlayerRegistry.LocalPlayer.Hotkeys;
                         HotkeyData hotkeyData = _hotkeysRef(hotkeyController)[_indexRef(slot) - 10];
 
-                        _iconRef(kbHotkeyElements[_indexRef(slot) - 10]).Color = Color.white;
-                        if (_indexRef(slot) - 10 < dpHotkeyElements.Count) _iconRef(dpHotkeyElements[_indexRef(slot) - 10]).Color = Color.white;
-                        hotkeyData.ReferenceId = pickupable.ReferenceId;
+                        _occupied[hotkeyController][hotkeyData] = pickupable.ReferenceId;
+                        _reserved[hotkeyController][hotkeyData] = pickupable.ReferenceId;
+
+                        _iconRef(kbHotkeyElements[_indexRef(slot) - 10]).Color = hotkeyElementColor;
+                        if (_indexRef(slot) - 10 < dpHotkeyElements.Count) _iconRef(dpHotkeyElements[_indexRef(slot) - 10]).Color = hotkeyElementColor;
                     }
 
                     pickupable.transform.CheckForProjectilesInChildren();
@@ -607,18 +717,14 @@ namespace ToolbeltFix
 
         private static StorageSlot<IPickupable> GetSlot(SlotStorage __instance, StorageType storageType, IPickupable pickupable, bool assign = true)
         {
-            if (storageType != StorageType.Inventory && PlayerRegistry.LocalPlayer.IsValid())
+            if (storageType != StorageType.Inventory && slotStorage_HotkeyController.TryGetValue(__instance, out HotkeyController hotkeyController))
             {
-                HotkeyController hotkeyController = PlayerRegistry.LocalPlayer.Hotkeys;
-
                 for (int i = 10; i < _slotDataRef(__instance).Count; i++)
                 {
+                    StorageSlot<IPickupable> storageSlot = _slotDataRef(__instance)[i];
                     HotkeyData hotkeyData = _hotkeysRef(hotkeyController)[i - 10];
 
-                    MiniGuid referenceId = hotkeyData.ReferenceId;
-                    StorageSlot<IPickupable> storageSlot = _slotDataRef(__instance)[i];
-
-                    if (storageSlot.Objects.Count == 0 && !referenceId.IsDefault() && referenceId.Equals(pickupable.ReferenceId))
+                    if (_reserved[hotkeyController][hotkeyData].Equals(pickupable.ReferenceId))
                     {
                         if (assign)
                         {
@@ -628,20 +734,22 @@ namespace ToolbeltFix
                     }
                 }
 
-                for (int i = 10; i < _slotDataRef(__instance).Count; i++)
+                if (!_loadStateRef(__instance).IsLoading())
                 {
-                    HotkeyData hotkeyData = _hotkeysRef(hotkeyController)[i - 10];
-
-                    CraftingType craftingType = hotkeyData.CraftingType.Value;
-                    StorageSlot<IPickupable> storageSlot = _slotDataRef(__instance)[i];
-
-                    if (storageSlot.Objects.Count == 0 && !craftingType.Equals(CraftingType.Empty) && (bool)CheckTypesMatch.Invoke(__instance, new object[] { craftingType, pickupable.CraftingType.InteractiveType, pickupable.CraftingType.AttributeType }))
+                    for (int i = 10; i < _slotDataRef(__instance).Count; i++)
                     {
-                        if (assign)
+                        StorageSlot<IPickupable> storageSlot = _slotDataRef(__instance)[i];
+                        HotkeyData hotkeyData = _hotkeysRef(hotkeyController)[i - 10];
+                        CraftingType craftingType = hotkeyData.CraftingType.Value;
+
+                        if (_occupied[hotkeyController][hotkeyData].IsDefault() && (bool)CheckTypesMatch.Invoke(__instance, new object[] { craftingType, pickupable.CraftingType.InteractiveType, pickupable.CraftingType.AttributeType }))
                         {
-                            storageSlot.CraftingType = new CraftingType(pickupable.CraftingType.AttributeType, pickupable.CraftingType.InteractiveType);
+                            if (assign)
+                            {
+                                storageSlot.CraftingType = new CraftingType(pickupable.CraftingType.AttributeType, pickupable.CraftingType.InteractiveType);
+                            }
+                            return storageSlot;
                         }
-                        return storageSlot;
                     }
                 }
 
@@ -650,6 +758,7 @@ namespace ToolbeltFix
                     return null;
                 }
             }
+
             for (int i = 0; i < 10; i++)
             {
                 StorageSlot<IPickupable> storageSlot = _slotDataRef(__instance)[i];
@@ -662,10 +771,10 @@ namespace ToolbeltFix
                     }
                 }
             }
-            for (int j = 0; j < _slotDataRef(__instance).Count; j++)
+            for (int j = 0; j < 10; j++)
             {
                 StorageSlot<IPickupable> storageSlot2 = _slotDataRef(__instance)[j];
-                if (storageSlot2.Objects.Count == 0 && (j < 10 || _loadStateRef(__instance).IsLoading()))
+                if (storageSlot2.Objects.Count == 0)
                 {
                     if (assign)
                     {
@@ -677,20 +786,27 @@ namespace ToolbeltFix
             return null;
         }
 
+        private static void ClearHotkey(HotkeyController hotkeyController, HotkeyData hotkeyData)
+        {
+            hotkeyData.CraftingType.Value = CraftingType.Empty;
+            _occupied[hotkeyController][hotkeyData] = default;
+            _reserved[hotkeyController][hotkeyData] = default;
+        }
+
         [HarmonyPatch(typeof(GeneralSettings), nameof(GeneralSettings.Load))]
         private class GeneralSettings_Load_Patch
         {
             private static void Postfix(GeneralSettings __instance)
             {
-                if (!enabled) return;
+                if (!Enabled) return;
 
                 try
                 {
-                    __instance.AlwaysShowHotkeyBar = settings.alwaysShowHotkeyBar;
+                    __instance.AlwaysShowHotkeyBar = Settings.alwaysShowHotkeyBar;
                 }
                 catch (Exception e)
                 {
-                    logger.LogException(e);
+                    Logger.LogException(e);
                 }
             }
         }
@@ -705,11 +821,11 @@ namespace ToolbeltFix
 
             private static bool Prefix(Crafter __instance, ref IDictionary<CraftingType, IList<IBase>> __result)
             {
-                if (!enabled) return true;
+                if (!Enabled) return true;
 
                 try
                 {
-                    foreach (StorageSlot<IPickupable> storageSlot in GetSlots(_playerRef(__instance).Inventory.GetSlotStorage() as SlotStorage, InventoryHotkeyComparison, StorageSlot<IPickupable>.QuantityComparison))
+                    foreach (StorageSlot<IPickupable> storageSlot in GetSlots(_playerRef(__instance).Inventory.GetSlotStorage() as SlotStorage, StorageSlot<IPickupable>.QuantityComparison, HotkeyComparison))
                     {
                         foreach (IPickupable obj in storageSlot.Objects)
                         {
@@ -726,39 +842,7 @@ namespace ToolbeltFix
                 }
                 catch (Exception e)
                 {
-                    logger.LogException(e);
-                    return true;
-                }
-            }
-        }
-
-        [HarmonyPatch(typeof(Holder), "Release")]
-        private class Holder_Release_Patch
-        {
-            private static readonly AccessTools.FieldRef<Holder, IPickupable> _currentObjectRef = AccessTools.FieldRefAccess<Holder, IPickupable>("_currentObject");
-
-            private static bool Prefix(Holder __instance, IPickupable pickupable)
-            {
-                if (!enabled) return true;
-
-                try
-                {
-                    if (pickupable.IsNullOrDestroyed())
-                    {
-                        return false;
-                    }
-                    if (_currentObjectRef(__instance) == pickupable)
-                    {
-                        __instance.DropCurrent();
-                        return false;
-                    }
-
-                    Pop(__instance.Storage as SlotStorage, pickupable, true, true);
-                    return false;
-                }
-                catch (Exception e)
-                {
-                    logger.LogException(e);
+                    Logger.LogException(e);
                     return true;
                 }
             }
@@ -780,7 +864,7 @@ namespace ToolbeltFix
 
             private static bool Prefix(Holder __instance, IPickupable pickupable, bool __result)
             {
-                if (!enabled) return true;
+                if (!Enabled) return true;
 
                 try
                 {
@@ -794,10 +878,12 @@ namespace ToolbeltFix
                         __result = true;
                         return false;
                     }
-                    _storageRef(__instance).Pop(pickupable);
-                    if (!_currentObjectRef(__instance).IsNullOrDestroyed() && !_storageRef(__instance).Push(_currentObjectRef(__instance)))
+                    SlotStorage storage = _storageRef(__instance) as SlotStorage;
+
+                    Pop(storage, pickupable, true, false);
+                    if (!_currentObjectRef(__instance).IsNullOrDestroyed() && !storage.Push(_currentObjectRef(__instance)))
                     {
-                        _storageRef(__instance).Push(pickupable);
+                        storage.Push(pickupable);
                         __result = false;
                         return false;
                     }
@@ -810,18 +896,19 @@ namespace ToolbeltFix
                     {
                         ShowPickupable.Invoke(__instance, new object[] { pickupable });
                     }
-                    if (_currentlyPickingRef(__instance) == pickupable && CanPush(_storageRef(__instance) as SlotStorage, StorageType.Hotkeys, pickupable, false, false))
+                    if (CanPush(storage, StorageType.Hotkeys, pickupable, false, false))
                     {
-                        StorageSlot<IPickupable> slot = GetSlot(_storageRef(__instance) as SlotStorage, StorageType.Hotkeys, pickupable, false);
+                        StorageSlot<IPickupable> slot = GetSlot(storage, StorageType.Hotkeys, pickupable, false);
 
-                        if (slot != null && _storageRef(__instance).LoadState.IsLoaded() && PlayerRegistry.LocalPlayer.IsValid())
+                        if (slot != null && slotStorage_HotkeyController.TryGetValue(storage, out HotkeyController hotkeyController))
                         {
-                            HotkeyController hotkeyController = PlayerRegistry.LocalPlayer.Hotkeys;
                             HotkeyData hotkeyData = _hotkeysRef(hotkeyController)[_indexRef(slot) - 10];
-                            hotkeyData.ReferenceId = pickupable.ReferenceId;
 
-                            _iconRef(kbHotkeyElements[_indexRef(slot) - 10]).Color = Color.white;
-                            if (_indexRef(slot) - 10 < dpHotkeyElements.Count) _iconRef(dpHotkeyElements[_indexRef(slot) - 10]).Color = Color.white;
+                            _occupied[hotkeyController][hotkeyData] = pickupable.ReferenceId;
+                            _reserved[hotkeyController][hotkeyData] = pickupable.ReferenceId;
+
+                            _iconRef(kbHotkeyElements[_indexRef(slot) - 10]).Color = hotkeyElementColor;
+                            if (_indexRef(slot) - 10 < dpHotkeyElements.Count) _iconRef(dpHotkeyElements[_indexRef(slot) - 10]).Color = hotkeyElementColor;
                         }
                     }
 
@@ -844,7 +931,7 @@ namespace ToolbeltFix
                 }
                 catch (Exception e)
                 {
-                    logger.LogException(e);
+                    Logger.LogException(e);
                     return true;
                 }
             }
@@ -855,7 +942,7 @@ namespace ToolbeltFix
         {
             private static bool Prefix(SlotStorage __instance, IPickupable pickupable, bool force, bool notification, ref bool __result)
             {
-                if (!enabled) return true;
+                if (!Enabled) return true;
 
                 try
                 {
@@ -866,7 +953,7 @@ namespace ToolbeltFix
                 }
                 catch (Exception e)
                 {
-                    logger.LogException(e);
+                    Logger.LogException(e);
                     return true;
                 }
             }
@@ -877,18 +964,18 @@ namespace ToolbeltFix
         {
             private static bool Prefix(SlotStorage __instance, IPickupable pickupable)
             {
-                if (!enabled) return true;
+                if (!Enabled) return true;
 
                 try
                 {
                     if (!__instance.Name.Equals("INVENTORY_MENU_BACKPACK_TITLE")) return true;
 
-                    Pop(__instance, pickupable);
+                    Pop(__instance, pickupable, true, true);
                     return false;
                 }
                 catch (Exception e)
                 {
-                    logger.LogException(e);
+                    Logger.LogException(e);
                     return true;
                 }
             }
@@ -897,64 +984,61 @@ namespace ToolbeltFix
         [HarmonyPatch(typeof(SlotStorage), nameof(SlotStorage.PopNext))]
         private class SlotStorage_PopNext_Patch
         {
-            private static readonly AccessTools.FieldRef<StorageSlot<IPickupable>, int> _indexRef = AccessTools.FieldRefAccess<StorageSlot<IPickupable>, int>("_index");
-
             private static readonly AccessTools.FieldRef<SlotStorage, List<StorageSlot<IPickupable>>> _slotDataRef = AccessTools.FieldRefAccess<SlotStorage, List<StorageSlot<IPickupable>>>("_slotData");
             private static readonly AccessTools.FieldRef<SlotStorage, StorageSlot<IPickupable>> _selectedSlotRef = AccessTools.FieldRefAccess<SlotStorage, StorageSlot<IPickupable>>("_selectedSlot");
 
             private static readonly MethodInfo OnSelectionChanged = AccessTools.Method(typeof(SlotStorage), "OnSelectionChanged");
 
-            private static readonly AccessTools.FieldRef<HotkeyController, HotkeyData[]> _hotkeysRef = AccessTools.FieldRefAccess<HotkeyController, HotkeyData[]>("_hotkeys");
+            private static readonly AccessTools.FieldRef<StorageSlot<IPickupable>, int> _indexRef = AccessTools.FieldRefAccess<StorageSlot<IPickupable>, int>("_index");
 
-            private static readonly MethodInfo ClearHotkey = AccessTools.Method(typeof(HotkeyController), "ClearHotkey");
+            private static readonly AccessTools.FieldRef<HotkeyController, HotkeyData[]> _hotkeysRef = AccessTools.FieldRefAccess<HotkeyController, HotkeyData[]>("_hotkeys");
 
             private static bool Prefix(SlotStorage __instance, IPickupable pickupable)
             {
-                if (!enabled) return true;
+                if (!Enabled) return true;
 
                 try
                 {
                     if (!__instance.Name.Equals("INVENTORY_MENU_BACKPACK_TITLE")) return true;
 
+                    HotkeyData pickupableHotkeyData = null;
+                    int hotkeySlotIndex = 0;
+
+                    if (slotStorage_HotkeyController.TryGetValue(__instance, out HotkeyController hotkeyController))
+                    {
+                        for (int i = 10; i < _slotDataRef(__instance).Count; i++)
+                        {
+                            HotkeyData hotkeyData = _hotkeysRef(hotkeyController)[i - 10];
+
+                            if (_occupied[hotkeyController][hotkeyData].Equals(pickupable.ReferenceId))
+                            {
+                                _occupied[hotkeyController][hotkeyData] = default;
+                                pickupableHotkeyData = hotkeyData;
+                                hotkeySlotIndex = i;
+                                break;
+                            }
+                        }
+                    }
+
                     if (_selectedSlotRef(__instance) == null || _selectedSlotRef(__instance).Objects.Count == 0)
                     {
-                        StorageSlot<IPickupable> storageSlot = __instance.FindSlot(pickupable.CraftingType);
-                        if (storageSlot == null)
+                        _selectedSlotRef(__instance) = __instance.FindSlot(pickupable.CraftingType);
+
+                        if (_selectedSlotRef(__instance) == null)
                         {
-                            storageSlot = __instance.FindSlot(pickupable.CraftingType.InteractiveType, AttributeType.None);
+                            _selectedSlotRef(__instance) = __instance.FindSlot(pickupable.CraftingType.InteractiveType, AttributeType.None);
                         }
 
-                        if (storageSlot != null)
+                        if ((_selectedSlotRef(__instance) == null || _indexRef(_selectedSlotRef(__instance)) > 9) && pickupableHotkeyData != null)
                         {
-                            _selectedSlotRef(__instance) = storageSlot;
-                        }
-
-                        if ((storageSlot == null || _indexRef(storageSlot) > 9) && PlayerRegistry.LocalPlayer.IsValid())
-                        {
-                            HotkeyController hotkeyController = PlayerRegistry.LocalPlayer.Hotkeys;
-
-                            for (int i = 10; i < _slotDataRef(__instance).Count; i++)
+                            if (Settings.rememberToolbelt)
                             {
-                                StorageSlot<IPickupable> hotkeySlot = _slotDataRef(__instance)[i];
-                                HotkeyData hotkeyData = _hotkeysRef(hotkeyController)[i - 10];
-
-                                if (hotkeyData.CraftingType.Value.Equals(pickupable.CraftingType) && hotkeySlot.Objects.Count == 0)
-                                {
-                                    if (settings.rememberToolbelt)
-                                    {
-#if DEBUG
-                                        _iconRef(kbHotkeyElements[i - 10]).Color = new Color(settings.albedo, settings.albedo, settings.albedo, settings.a);
-                                        if (i - 10 < dpHotkeyElements.Count) _iconRef(dpHotkeyElements[i - 10]).Color = new Color(settings.albedo, settings.albedo, settings.albedo, settings.a);
-#else
-                                        _iconRef(kbHotkeyElements[i - 10]).Color = new Color(0.4f, 0.4f, 0.4f, 0.65f);
-                                        if (i - 10 < dpHotkeyElements.Count) _iconRef(dpHotkeyElements[i - 10]).Color = new Color(0.4f, 0.4f, 0.4f, 0.65f);
-#endif
-                                    }
-                                    else
-                                    {
-                                        ClearHotkey.Invoke(hotkeyController, new object[] { hotkeyData });
-                                    }
-                                }
+                                _iconRef(kbHotkeyElements[hotkeySlotIndex - 10]).Color = hotkeyElementEmptyColor;
+                                if (hotkeySlotIndex - 10 < dpHotkeyElements.Count) _iconRef(dpHotkeyElements[hotkeySlotIndex - 10]).Color = hotkeyElementEmptyColor;
+                            }
+                            else
+                            {
+                                ClearHotkey(hotkeyController, pickupableHotkeyData);
                             }
                         }
                     }
@@ -969,7 +1053,7 @@ namespace ToolbeltFix
                 }
                 catch (Exception e)
                 {
-                    logger.LogException(e);
+                    Logger.LogException(e);
                     return true;
                 }
             }
@@ -980,7 +1064,7 @@ namespace ToolbeltFix
         {
             private static bool Prefix(SlotStorage __instance, IPickupable pickupable, bool force, ref bool __result)
             {
-                if (!enabled) return true;
+                if (!Enabled) return true;
 
                 try
                 {
@@ -991,7 +1075,7 @@ namespace ToolbeltFix
                 }
                 catch (Exception e)
                 {
-                    logger.LogException(e);
+                    Logger.LogException(e);
                     return true;
                 }
             }
@@ -1005,7 +1089,7 @@ namespace ToolbeltFix
 
             private static bool Prefix(SlotStorage __instance)
             {
-                if (!enabled) return true;
+                if (!Enabled) return true;
 
                 try
                 {
@@ -1029,31 +1113,118 @@ namespace ToolbeltFix
                 }
                 catch (Exception e)
                 {
-                    logger.LogException(e);
+                    Logger.LogException(e);
                     return true;
                 }
             }
         }
 
+#if DEBUG
+        [HarmonyPatch(typeof(SlotStorage), "OrderedPush")]
+        private class SlotStorage_OrderedPush_Patch
+        {
+            private static readonly AccessTools.FieldRef<SlotStorage, Transform> _storageContainerRef = AccessTools.FieldRefAccess<SlotStorage, Transform>("_storageContainer");
+            private static readonly AccessTools.FieldRef<SlotStorage, LoadState> _loadStateRef = AccessTools.FieldRefAccess<SlotStorage, LoadState>("_loadState");
+
+            private static bool Prefix(SlotStorage __instance, List<IPickupable> items, JObject slotsData)
+            {
+                if (!Enabled) return true;
+
+                try
+                {
+                    if (!__instance.Name.Equals("INVENTORY_MENU_BACKPACK_TITLE")) return true;
+
+                    IDynamicParentProvider _dynamicParenter = UnityEngine.Object.FindObjectOfType<StrandedWorld>();
+                    int numfailedLoadedPickupables = 0;
+
+                    for (int i = 0; i < slotsData.Children.Count; i++)
+                    {
+                        JObject jobject = slotsData.Children[i];
+                        if (jobject.IsValid() && !jobject.IsNull())
+                        {
+                            for (int j = 0; j < jobject.Children.Count; j++)
+                            {
+                                IPickupable pickupable = items.FirstOrDefault_NonAlloc((IPickupable itm, MiniGuid referenceId) => itm.ReferenceId.Equals(referenceId), Prefabs.GetReferenceId(jobject.Children[j], true));
+                                if (pickupable.IsNullOrDestroyed())
+                                {
+                                    Debug.LogError(string.Format("Slot Storage {0} Load - Unable to find reference item {1}", __instance.ReferenceId, Prefabs.GetReferenceId(jobject.Children[j], true)));
+                                }
+                                if (!__instance.Push(pickupable))
+                                {
+                                    Logger.Warning("Could not push " + pickupable + " to storage. Not enough room.");
+
+                                    if (Settings.dropOverflowItems)
+                                    {
+                                        pickupable.Release();
+                                        pickupable.transform.parent = null;
+                                        pickupable.TransformParent = _dynamicParenter?.GetParent();
+                                        pickupable.transform.position = new Vector3(_storageContainerRef(__instance).position.x, _storageContainerRef(__instance).position.y + numfailedLoadedPickupables * 1.5f, _storageContainerRef(__instance).position.z);
+                                        pickupable.Parent();
+                                        pickupable.Hold(false);
+                                        pickupable.SetOwner(null);
+                                    }
+
+                                    numfailedLoadedPickupables++;
+                                }
+                            }
+                        }
+                    }
+                    _loadStateRef(__instance) = LoadState.Loaded;
+
+                    return false;
+                }
+                catch (Exception e)
+                {
+                    Logger.LogException(e);
+                    return true;
+                }
+            }
+        }
+#endif
+
         [HarmonyPatch(typeof(SlotStorageAudio), "SlotStorage_Pushed")]
         private class SlotStorageAudio_SlotStorage_Pushed_Patch
         {
-            private static bool Prefix()
-            {
-                if (!enabled) return true;
+            private static readonly AccessTools.FieldRef<SlotStorageAudio, ISlotStorage<IPickupable>> _slotStorageRef = AccessTools.FieldRefAccess<SlotStorageAudio, ISlotStorage<IPickupable>>("_slotStorage");
 
-                return !silentSlotStorageTransfer;
+            private static bool Prefix(SlotStorageAudio __instance)
+            {
+                if (!Enabled) return true;
+
+                try
+                {
+                    if (!slotStorage_HotkeyController.ContainsKey(_slotStorageRef(__instance))) return true;
+
+                    return !silentSlotStorageTransfer;
+                }
+                catch (Exception e)
+                {
+                    Logger.LogException(e);
+                    return true;
+                }
             }
         }
 
         [HarmonyPatch(typeof(SlotStorageAudio), "SlotStorage_Popped")]
         private class SlotStorageAudio_SlotStorage_Popped_Patch
         {
-            private static bool Prefix()
-            {
-                if (!enabled) return true;
+            private static readonly AccessTools.FieldRef<SlotStorageAudio, ISlotStorage<IPickupable>> _slotStorageRef = AccessTools.FieldRefAccess<SlotStorageAudio, ISlotStorage<IPickupable>>("_slotStorage");
 
-                return !silentSlotStorageTransfer;
+            private static bool Prefix(SlotStorageAudio __instance)
+            {
+                if (!Enabled) return true;
+
+                try
+                {
+                    if (!slotStorage_HotkeyController.ContainsKey(_slotStorageRef(__instance))) return true;
+
+                    return !silentSlotStorageTransfer;
+                }
+                catch (Exception e)
+                {
+                    Logger.LogException(e);
+                    return true;
+                }
             }
         }
 
@@ -1064,7 +1235,7 @@ namespace ToolbeltFix
 
             private static void Postfix(StorageMenuPresenter __instance)
             {
-                if (!enabled) return;
+                if (!Enabled) return;
 
                 try
                 {
@@ -1072,7 +1243,7 @@ namespace ToolbeltFix
                 }
                 catch (Exception e)
                 {
-                    logger.LogException(e);
+                    Logger.LogException(e);
                 }
             }
         }
@@ -1084,7 +1255,7 @@ namespace ToolbeltFix
 
             private static void Postfix(StorageMenuPresenter __instance)
             {
-                if (!enabled) return;
+                if (!Enabled) return;
 
                 try
                 {
@@ -1092,7 +1263,7 @@ namespace ToolbeltFix
                 }
                 catch (Exception e)
                 {
-                    logger.LogException(e);
+                    Logger.LogException(e);
                 }
             }
         }
@@ -1109,7 +1280,7 @@ namespace ToolbeltFix
 
             private static bool Prefix(RadialMenuPresenterBase<InventoryData, InventoryRadialMenuElement, InventoryRadialMenuViewAdapterBase> __instance, IRadialMenuElement<InventoryData> element)
             {
-                if (!enabled || !settings.stackTransfer) return true;
+                if (!Enabled || !Settings.stackTransfer) return true;
 
                 try
                 {
@@ -1154,7 +1325,7 @@ namespace ToolbeltFix
                 }
                 catch (Exception e)
                 {
-                    logger.LogException(e);
+                    Logger.LogException(e);
                     return true;
                 }
             }
@@ -1170,7 +1341,7 @@ namespace ToolbeltFix
 
             private static bool Prefix(InventoryMenuPresenter __instance, IRadialMenuElement<InventoryData> element)
             {
-                if (!enabled || !settings.quickDrop) return true;
+                if (!Enabled || !Settings.quickDrop) return true;
 
                 try
                 {
@@ -1188,7 +1359,7 @@ namespace ToolbeltFix
                 }
                 catch (Exception e)
                 {
-                    logger.LogException(e);
+                    Logger.LogException(e);
                     return true;
                 }
             }
@@ -1204,7 +1375,7 @@ namespace ToolbeltFix
 
             private static bool Prefix(InventoryMenuPresenter __instance, IRadialMenuElement<InventoryData> element)
             {
-                if (!enabled || !settings.stackTransfer) return true;
+                if (!Enabled || !Settings.stackTransfer) return true;
 
                 try
                 {
@@ -1247,7 +1418,7 @@ namespace ToolbeltFix
                 }
                 catch (Exception e)
                 {
-                    logger.LogException(e);
+                    Logger.LogException(e);
                     return true;
                 }
             }
@@ -1263,7 +1434,7 @@ namespace ToolbeltFix
 
             private static void Postfix(PlatformHotkeyViewProvider __instance)
             {
-                if (!enabled) return;
+                if (!Enabled) return;
 
                 try
                 {
@@ -1272,7 +1443,148 @@ namespace ToolbeltFix
                 }
                 catch (Exception e)
                 {
-                    logger.LogException(e);
+                    Logger.LogException(e);
+                }
+            }
+        }
+
+        [HarmonyPatch(typeof(HotkeyController), "Awake")]
+        private class HotkeyController_Awake_Patch
+        {
+            private static readonly AccessTools.FieldRef<HotkeyController, HotkeyData[]> _hotkeysRef = AccessTools.FieldRefAccess<HotkeyController, HotkeyData[]>("_hotkeys");
+
+            private static bool Prefix(HotkeyController __instance)
+            {
+                if (!Enabled) return true;
+
+                try
+                {
+                    _hotkeysRef(__instance) = new HotkeyData[10];
+
+                    _occupied[__instance] = new Dictionary<HotkeyData, MiniGuid>(10);
+                    _reserved[__instance] = new Dictionary<HotkeyData, MiniGuid>(10);
+
+                    for (int i = 0; i < 10; i++)
+                    {
+                        int num = i + 1;
+                        if (num == 10)
+                        {
+                            num = 0;
+                        }
+                        _hotkeysRef(__instance)[i] = new HotkeyData
+                        {
+                            Number = num
+                        };
+
+                        _occupied[__instance][_hotkeysRef(__instance)[i]] = default;
+                        _reserved[__instance][_hotkeysRef(__instance)[i]] = default;
+                    }
+                    return false;
+                }
+                catch (Exception e)
+                {
+                    Logger.LogException(e);
+                    return true;
+                }
+            }
+        }
+
+        [HarmonyPatch(typeof(HotkeyController), nameof(HotkeyController.SetPlayer))]
+        private class HotkeyController_SetPlayer_Patch
+        {
+            private static readonly AccessTools.FieldRef<HotkeyController, InventoryRadialMenuPresenter> _inventoryRadialMenuRef = AccessTools.FieldRefAccess<HotkeyController, InventoryRadialMenuPresenter>("_inventoryRadialMenu");
+            private static readonly AccessTools.FieldRef<HotkeyController, HotkeyData[]> _hotkeysRef = AccessTools.FieldRefAccess<HotkeyController, HotkeyData[]>("_hotkeys");
+            private static readonly AccessTools.FieldRef<HotkeyController, HotkeyView> _viewRef = AccessTools.FieldRefAccess<HotkeyController, HotkeyView>("_view");
+            private static readonly AccessTools.FieldRef<HotkeyController, IPlayer> _playerRef = AccessTools.FieldRefAccess<HotkeyController, IPlayer>("_player");
+
+            private static readonly MethodInfo EventManager_QuickAccessSlotUnlocked = AccessTools.Method(typeof(HotkeyController), "EventManager_QuickAccessSlotUnlocked");
+            private static readonly MethodInfo EventManager_OptionsApplied = AccessTools.Method(typeof(HotkeyController), "EventManager_OptionsApplied");
+            private static readonly MethodInfo SubscribeToInputEvents = AccessTools.Method(typeof(HotkeyController), "SubscribeToInputEvents");
+            private static readonly MethodInfo Holder_Dropped = AccessTools.Method(typeof(HotkeyController), "Holder_Dropped");
+            private static readonly MethodInfo LoadOptions = AccessTools.Method(typeof(HotkeyController), "LoadOptions");
+
+            private static bool Prefix(HotkeyController __instance, IPlayer player)
+            {
+                if (!Enabled) return true;
+
+                try
+                {
+                    _playerRef(__instance) = player;
+                    slotStorage_HotkeyController[_playerRef(__instance).Inventory.GetSlotStorage()] = __instance;
+                    PlayerUI playerUI = _playerRef(__instance).PlayerUI;
+                    _viewRef(__instance) = playerUI?.Canvas.GetComponentInChildren<HotkeyView>();
+                    if (_viewRef(__instance) == null)
+                    {
+                        if (_playerRef(__instance).IsOwner)
+                        {
+                            Debug.LogError(string.Format("HotkeyController:: No view component found! for player with id {0}", _playerRef(__instance).Id));
+                        }
+                        return false;
+                    }
+                    _viewRef(__instance).Initialize(_hotkeysRef(__instance));
+                    _playerRef(__instance).Holder.Dropped += AccessTools.MethodDelegate<Action<IPickupable>>(Holder_Dropped, __instance);
+                    _inventoryRadialMenuRef(__instance) = _playerRef(__instance).PlayerUI.GetController<InventoryRadialMenuPresenter>();
+                    SubscribeToInputEvents.Invoke(__instance, new object[] { _playerRef(__instance).Input });
+                    EventManager_QuickAccessSlotUnlocked_Event = new EventManager.EventDelegate<QuickAccessSlotUnlockedEvent>(AccessTools.MethodDelegate<Action<QuickAccessSlotUnlockedEvent>>(EventManager_QuickAccessSlotUnlocked, __instance));
+                    EventManager_OptionsApplied_Event = new EventManager.EventDelegate<OptionsAppliedEvent>(AccessTools.MethodDelegate<Action<OptionsAppliedEvent>>(EventManager_OptionsApplied, __instance));
+                    EventManager.AddListener(EventManager_QuickAccessSlotUnlocked_Event);
+                    EventManager.AddListener(EventManager_OptionsApplied_Event);
+                    LoadOptions.Invoke(__instance, null);
+                    return false;
+                }
+                catch (Exception e)
+                {
+                    Logger.LogException(e);
+                    return true;
+                }
+            }
+        }
+
+        [HarmonyPatch(typeof(HotkeyController), "OnDestroy")]
+        private class HotkeyController_OnDestroy_Patch
+        {
+            private static readonly AccessTools.FieldRef<HotkeyController, InventoryRadialMenuPresenter> _inventoryRadialMenuRef = AccessTools.FieldRefAccess<HotkeyController, InventoryRadialMenuPresenter>("_inventoryRadialMenu");
+            private static readonly AccessTools.FieldRef<HotkeyController, bool> _subbedToInventoryEventsRef = AccessTools.FieldRefAccess<HotkeyController, bool>("_subbedToInventoryEvents");
+            private static readonly AccessTools.FieldRef<HotkeyController, IPlayer> _playerRef = AccessTools.FieldRefAccess<HotkeyController, IPlayer>("_player");
+
+            private static readonly MethodInfo UnsubscribeFromInputEvents = AccessTools.Method(typeof(HotkeyController), "UnsubscribeFromInputEvents");
+            private static readonly MethodInfo Holder_Dropped = AccessTools.Method(typeof(HotkeyController), "Holder_Dropped");
+
+            private static bool Prefix(HotkeyController __instance)
+            {
+                if (!Enabled) return true;
+
+                try
+                {
+                    _occupied.Remove(__instance);
+                    _reserved.Remove(__instance);
+
+                    if (_playerRef(__instance).IsNullOrDestroyed())
+                    {
+                        return false;
+                    }
+
+                    slotStorage_HotkeyController.Remove(_playerRef(__instance).Inventory.GetSlotStorage());
+
+                    if (_playerRef(__instance).Holder != null)
+                    {
+                        _playerRef(__instance).Holder.Dropped -= AccessTools.MethodDelegate<Action<IPickupable>>(Holder_Dropped, __instance);
+                    }
+                    if (_subbedToInventoryEventsRef(__instance) && _inventoryRadialMenuRef(__instance) != null)
+                    {
+                        _inventoryRadialMenuRef(__instance).View.ShowView -= __instance.Show;
+                        _inventoryRadialMenuRef(__instance).View.HideView -= __instance.Hide;
+                    }
+                    IPlayer player = _playerRef(__instance);
+                    UnsubscribeFromInputEvents.Invoke(__instance, new object[] { player?.Input });
+                    EventManager.RemoveListener(EventManager_QuickAccessSlotUnlocked_Event);
+                    EventManager.RemoveListener(EventManager_OptionsApplied_Event);
+                    return false;
+                }
+                catch (Exception e)
+                {
+                    Logger.LogException(e);
+                    return true;
                 }
             }
         }
@@ -1290,7 +1602,7 @@ namespace ToolbeltFix
 
             private static bool Prefix(HotkeyController __instance)
             {
-                if (!enabled) return true;
+                if (!Enabled) return true;
 
                 try
                 {
@@ -1327,7 +1639,7 @@ namespace ToolbeltFix
                 }
                 catch (Exception e)
                 {
-                    logger.LogException(e);
+                    Logger.LogException(e);
                     return true;
                 }
             }
@@ -1338,7 +1650,7 @@ namespace ToolbeltFix
         {
             private static bool Prefix()
             {
-                if (!enabled) return true;
+                if (!Enabled) return true;
 
                 return false;
             }
@@ -1352,12 +1664,14 @@ namespace ToolbeltFix
             private static readonly AccessTools.FieldRef<HotkeyController, HotkeyView> _viewRef = AccessTools.FieldRefAccess<HotkeyController, HotkeyView>("_view");
             private static readonly AccessTools.FieldRef<HotkeyController, IPlayer> _playerRef = AccessTools.FieldRefAccess<HotkeyController, IPlayer>("_player");
 
+            private static readonly AccessTools.FieldRef<SlotStorage, List<StorageSlot<IPickupable>>> _slotDataRef = AccessTools.FieldRefAccess<SlotStorage, List<StorageSlot<IPickupable>>>("_slotData");
+
             private static readonly MethodInfo GetInventoryData = AccessTools.Method(typeof(InventoryMenuPresenter), "GetInventoryData");
             private static readonly MethodInfo BlockHotkeyInput = AccessTools.Method(typeof(HotkeyController), "BlockHotkeyInput");
 
             private static bool Prefix(HotkeyController __instance, int number)
             {
-                if (!enabled) return true;
+                if (!Enabled) return true;
 
                 try
                 {
@@ -1366,22 +1680,23 @@ namespace ToolbeltFix
                         return false;
                     }
 
-                    MiniGuid referenceId = _hotkeysRef(__instance)[number].ReferenceId;
-                    CraftingType craftingType = _hotkeysRef(__instance)[number].CraftingType.Value;
                     IPickupable currentObject = _playerRef(__instance).Holder.CurrentObject;
+
+                    HotkeyData hotkeyData = _hotkeysRef(__instance)[number];
+                    MiniGuid referenceId = _reserved[__instance][hotkeyData];
 
                     if (referenceId.IsDefault() || !currentObject.IsNullOrDestroyed() && currentObject.ReferenceId.Equals(referenceId))
                     {
                         return false;
                     }
 
-                    ISlotStorage<IPickupable> storage = _playerRef(__instance).Inventory.GetSlotStorage();
-                    IPickupable pickupable = storage.GetSlots(InventoryHotkeyComparison).SelectMany(slot => slot.Objects).FirstOrDefault_NonAlloc((IPickupable item, MiniGuid id) => item.ReferenceId.Equals(id), referenceId);
+                    SlotStorage storage = _playerRef(__instance).Inventory.GetSlotStorage() as SlotStorage;
+                    StorageSlot<IPickupable> storageSlot = _slotDataRef(storage)[10 + number];
+                    IPickupable pickupable = storageSlot.Objects.FirstOrDefault();
 
                     if (!pickupable.IsNullOrDestroyed() && (currentObject.IsNullOrDestroyed() || storage.CanPush(currentObject)))
                     {
                         storage.ReplicatedSelect(pickupable);
-                        //_playerRef(__instance).Holder.ReplicatedSelect(pickupable);
 
                         IList<IList<InventoryData>> inventoryData = GetInventoryData.Invoke(_inventoryRadialMenuRef(__instance).Inventory, null) as IList<IList<InventoryData>>;
                         _inventoryRadialMenuRef(__instance).Initialize(inventoryData);
@@ -1393,7 +1708,7 @@ namespace ToolbeltFix
                 }
                 catch (Exception e)
                 {
-                    logger.LogException(e);
+                    Logger.LogException(e);
                     return true;
                 }
             }
@@ -1408,7 +1723,6 @@ namespace ToolbeltFix
             private static readonly AccessTools.FieldRef<HotkeyController, IPlayer> _playerRef = AccessTools.FieldRefAccess<HotkeyController, IPlayer>("_player");
 
             private static readonly MethodInfo BlockHotkeyInput = AccessTools.Method(typeof(HotkeyController), "BlockHotkeyInput");
-            private static readonly MethodInfo ClearHotkey = AccessTools.Method(typeof(HotkeyController), "ClearHotkey");
 
             private static readonly AccessTools.FieldRef<SlotStorage, List<StorageSlot<IPickupable>>> _slotDataRef = AccessTools.FieldRefAccess<SlotStorage, List<StorageSlot<IPickupable>>>("_slotData");
 
@@ -1416,7 +1730,7 @@ namespace ToolbeltFix
 
             private static bool Prefix(HotkeyController __instance, int number, IPickupable obj)
             {
-                if (!enabled) return true;
+                if (!Enabled) return true;
 
                 try
                 {
@@ -1427,7 +1741,7 @@ namespace ToolbeltFix
 
                     HotkeyData hotkeyData = _hotkeysRef(__instance)[number];
 
-                    if (obj.IsNullOrDestroyed() && hotkeyData.ReferenceId.IsDefault())
+                    if (obj.IsNullOrDestroyed() && _reserved[__instance][hotkeyData].IsDefault())
                     {
                         _viewRef(__instance)?.OnAssignmentFailed();
                         return false;
@@ -1445,7 +1759,7 @@ namespace ToolbeltFix
                             if (CanPush(storage, StorageType.Inventory, pickupable, false, true))
                             {
                                 silentSlotStorageTransfer = true;
-                                Pop(storage, pickupable, false);
+                                Pop(storage, pickupable, false, false);
                                 silentSlotStorageTransfer = false;
                                 Push(storage, StorageType.Inventory, pickupable, false);
 
@@ -1460,12 +1774,12 @@ namespace ToolbeltFix
                             }
                         }
 
-                        ClearHotkey.Invoke(__instance, new object[] { hotkeyData });
+                        ClearHotkey(__instance, hotkeyData);
                         _viewRef(__instance)?.OnAssignmentRemoved();
                     }
                     else if (!obj.IsNullOrDestroyed())
                     {
-                        if (obj.CraftingType.InteractiveType == InteractiveType.CONTAINER && !settings.allowContainerCrates)
+                        if (obj.CraftingType.InteractiveType == InteractiveType_CONTAINER && !Settings.allowContainerCrates)
                         {
                             LocalizedNotification.Post(_playerRef(__instance), NotificationPriority.Low, 4f, "Cannot assign container crates to the toolbelt.");
                             _viewRef(__instance)?.OnAssignmentFailed();
@@ -1483,7 +1797,7 @@ namespace ToolbeltFix
                             StorageSlot<IPickupable> hotkeySlot = _slotDataRef(storage)[i];
                             HotkeyData hotkeyData2 = _hotkeysRef(__instance)[i - 10];
 
-                            if (hotkeyData2.ReferenceId.Equals(obj.ReferenceId))
+                            if (_reserved[__instance][hotkeyData2].Equals(obj.ReferenceId))
                             {
                                 existingHotkeyData = hotkeyData2;
 
@@ -1499,7 +1813,7 @@ namespace ToolbeltFix
                         if (!isCurrentObject && existingHotkeyPickupable.IsNullOrDestroyed())
                         {
                             silentSlotStorageTransfer = true;
-                            Pop(storage, obj, false);
+                            Pop(storage, obj, false, false);
                             silentSlotStorageTransfer = false;
                         }
 
@@ -1510,7 +1824,7 @@ namespace ToolbeltFix
                             if (CanPush(storage, StorageType.Inventory, hotkeyPickupable, false, true))
                             {
                                 silentSlotStorageTransfer = true;
-                                Pop(storage, hotkeyPickupable, false);
+                                Pop(storage, hotkeyPickupable, false, false);
                                 Push(storage, StorageType.Inventory, hotkeyPickupable, false);
                                 silentSlotStorageTransfer = false;
                             }
@@ -1531,17 +1845,18 @@ namespace ToolbeltFix
                         {
                             obj = existingHotkeyPickupable;
                             silentSlotStorageTransfer = true;
-                            Pop(storage, obj, false);
+                            Pop(storage, obj, false, false);
                             silentSlotStorageTransfer = false;
                         }
 
                         if (existingHotkeyData != null)
                         {
-                            ClearHotkey.Invoke(__instance, new object[] { existingHotkeyData });
+                            ClearHotkey(__instance, existingHotkeyData);
                         }
 
-                        _hotkeysRef(__instance)[number].ReferenceId = obj.ReferenceId;
-                        _hotkeysRef(__instance)[number].CraftingType.Value = obj.CraftingType;
+                        _occupied[__instance][hotkeyData] = obj.ReferenceId;
+                        _reserved[__instance][hotkeyData] = obj.ReferenceId;
+                        hotkeyData.CraftingType.Value = obj.CraftingType;
 
                         if (!isCurrentObject || !existingHotkeyPickupable.IsNullOrDestroyed())
                         {
@@ -1555,14 +1870,14 @@ namespace ToolbeltFix
                         _viewRef(__instance)?.OnAssignmentCreated();
                     }
 
-                    _iconRef(kbHotkeyElements[number]).Color = Color.white;
-                    if (number < dpHotkeyElements.Count) _iconRef(dpHotkeyElements[number]).Color = Color.white;
+                    _iconRef(kbHotkeyElements[number]).Color = hotkeyElementColor;
+                    if (number < dpHotkeyElements.Count) _iconRef(dpHotkeyElements[number]).Color = hotkeyElementColor;
 
                     return false;
                 }
                 catch (Exception e)
                 {
-                    logger.LogException(e);
+                    Logger.LogException(e);
                     return true;
                 }
             }
@@ -1576,7 +1891,7 @@ namespace ToolbeltFix
 
             private static bool Prefix(HotkeyController __instance, ref JObject __result)
             {
-                if (!enabled) return true;
+                if (!Enabled) return true;
 
                 try
                 {
@@ -1588,7 +1903,7 @@ namespace ToolbeltFix
                         HotkeyData hotkeyData = _hotkeysRef(__instance)[i];
                         JObject jobject3 = new JObject();
                         jobject3.AddField("Locked", hotkeyData.Locked.Value);
-                        jobject3.AddField("ReferenceId", hotkeyData.ReferenceId.ToString());
+                        jobject3.AddField("ReferenceId", _reserved[__instance][hotkeyData].ToString());
                         jobject3.AddField("CraftingType", hotkeyData.CraftingType.Value.Save());
                         jobject2.Add(jobject3);
                     }
@@ -1598,7 +1913,7 @@ namespace ToolbeltFix
                 }
                 catch (Exception e)
                 {
-                    logger.LogException(e);
+                    Logger.LogException(e);
                     return true;
                 }
             }
@@ -1617,7 +1932,7 @@ namespace ToolbeltFix
 
             private static bool Prefix(HotkeyController __instance, JObject data)
             {
-                if (!enabled) return true;
+                if (!Enabled) return true;
 
                 try
                 {
@@ -1625,12 +1940,29 @@ namespace ToolbeltFix
                     UpdateLevel.Invoke(__instance, null);
 
                     JObject hotkeysData = data.GetField("Hotkeys");
+
+                    for (int i = 0; i < hotkeysData.Children.Count; i++)
+                    {
+                        HotkeyData hotkeyData = _hotkeysRef(__instance)[i];
+                        JObject jobject = hotkeysData.Children[i];
+                        bool value = jobject.GetField("Locked").GetValue<bool>();
+                        if (value)
+                        {
+                            break;
+                        }
+
+                        MiniGuid miniGuid = jobject.GetField("ReferenceId").GetValue<string>().ToMiniGuid();
+
+                        _reserved[__instance][hotkeyData] = miniGuid;
+                        hotkeyData.Locked.Value = value;
+                    }
+
                     LevelLoader.CurrentLoader.DeferredLoading.Add(() => Timing.RunCoroutine(DeferredLoad(__instance, hotkeysData)));
                     return false;
                 }
                 catch (Exception e)
                 {
-                    logger.LogException(e);
+                    Logger.LogException(e);
                     return true;
                 }
             }
@@ -1643,7 +1975,7 @@ namespace ToolbeltFix
                     if (Time.unscaledTime > startTime + PlayerRegistry.LocalPeer.GlobalTimeout)
                     {
                         MultiplayerMng.LogError(string.Format("Timeout while waiting for Holder & Inventory ({0}) to load.", _playerRef(__instance).Inventory.GetSlotStorage().LoadState), null);
-                        logger.Error(string.Format("Timeout while waiting for Holder & Inventory ({0}) to load. Cannot proceed with loading the toolbelt.", _playerRef(__instance).Inventory.GetSlotStorage().LoadState));
+                        Logger.Error(string.Format("Timeout while waiting for Holder & Inventory ({0}) to load. Cannot proceed with loading the toolbelt.", _playerRef(__instance).Inventory.GetSlotStorage().LoadState));
                         yield break;
                     }
                     yield return 0f;
@@ -1663,55 +1995,59 @@ namespace ToolbeltFix
 
                 for (int i = 0; i < hotkeysData.Children.Count; i++)
                 {
+                    HotkeyData hotkeyData = _hotkeysRef(__instance)[i];
                     JObject jobject = hotkeysData.Children[i];
-                    bool value = jobject.GetField("Locked").GetValue<bool>();
-                    if (value)
+                    if (hotkeyData.Locked.Value)
                     {
                         break;
                     }
-
-                    _hotkeysRef(__instance)[i].Locked.Value = value;
-
-                    MiniGuid miniGuid = jobject.GetField("ReferenceId").GetValue<string>().ToMiniGuid();
-                    CraftingType craftingType = new CraftingType(AttributeType.None, InteractiveType.None);
-                    JObject craftingTypeData = jobject.GetField("CraftingType");
-
-                    if (craftingTypeData != null && !craftingTypeData.IsNull())
+                    if (_reserved[__instance][hotkeyData].IsDefault())
                     {
-                        craftingType.Load(craftingTypeData);
+                        continue;
                     }
 
-                    if (!miniGuid.IsDefault())
+                    IPickupable pickupable = list.FirstOrDefault_NonAlloc((IPickupable o, MiniGuid referenceId) => o.ReferenceId.Equals(referenceId), _reserved[__instance][hotkeyData]);
+
+                    if (!pickupable.IsNullOrDestroyed())
                     {
-                        IPickupable pickupable = list.FirstOrDefault_NonAlloc((IPickupable o, MiniGuid referenceId) => o.ReferenceId.Equals(referenceId), miniGuid);
+                        _occupied[__instance][hotkeyData] = pickupable.ReferenceId;
+                        _reserved[__instance][hotkeyData] = pickupable.ReferenceId;
+                        hotkeyData.CraftingType.Value = pickupable.CraftingType;
 
-                        if (!pickupable.IsNullOrDestroyed())
+                        _iconRef(kbHotkeyElements[i]).Color = hotkeyElementColor;
+                        if (i < dpHotkeyElements.Count) _iconRef(dpHotkeyElements[i]).Color = hotkeyElementColor;
+
+                        if (!pickupable.Equals(_playerRef(__instance).Holder.CurrentObject))
                         {
-                            _hotkeysRef(__instance)[i].ReferenceId = pickupable.ReferenceId;
-                            _hotkeysRef(__instance)[i].CraftingType.Value = pickupable.CraftingType;
-
-                            _iconRef(kbHotkeyElements[i]).Color = Color.white;
-                            if (i < dpHotkeyElements.Count) _iconRef(dpHotkeyElements[i]).Color = Color.white;
-
-                            if (!pickupable.Equals(_playerRef(__instance).Holder.CurrentObject))
-                            {
-                                Pop(storage, pickupable, true);
-                                hotkeyPickupables.Add(i, pickupable);
-                            }
+                            Pop(storage, pickupable, true, false);
+                            hotkeyPickupables.Add(i, pickupable);
                         }
-                        else if (settings.rememberToolbelt)
+                    }
+                    else if (Settings.rememberToolbelt)
+                    {
+                        CraftingType craftingType = new CraftingType(AttributeType.None, InteractiveType.None);
+                        JObject craftingTypeData = jobject.GetField("CraftingType");
+
+                        if (craftingTypeData != null && !craftingTypeData.IsNull())
                         {
-                            _hotkeysRef(__instance)[i].ReferenceId = miniGuid;
-                            _hotkeysRef(__instance)[i].CraftingType.Value = craftingType;
-
-#if DEBUG
-                            _iconRef(kbHotkeyElements[i]).Color = new Color(settings.albedo, settings.albedo, settings.albedo, settings.a);
-                            if (i < dpHotkeyElements.Count) _iconRef(dpHotkeyElements[i]).Color = new Color(settings.albedo, settings.albedo, settings.albedo, settings.a);
-#else
-                            _iconRef(kbHotkeyElements[i]).Color = new Color(0.4f, 0.4f, 0.4f, 0.65f);
-                            if (i < dpHotkeyElements.Count) _iconRef(dpHotkeyElements[i]).Color = new Color(0.4f, 0.4f, 0.4f, 0.65f);
-#endif
+                            craftingType.Load(craftingTypeData);
                         }
+
+                        if (!craftingType.Equals(CraftingType.Empty))
+                        {
+                            hotkeyData.CraftingType.Value = craftingType;
+
+                            _iconRef(kbHotkeyElements[i]).Color = hotkeyElementEmptyColor;
+                            if (i < dpHotkeyElements.Count) _iconRef(dpHotkeyElements[i]).Color = hotkeyElementEmptyColor;
+                        }
+                        else
+                        {
+                            _reserved[__instance][hotkeyData] = default;
+                        }
+                    }
+                    else
+                    {
+                        _reserved[__instance][hotkeyData] = default;
                     }
                 }
 
@@ -1722,7 +2058,7 @@ namespace ToolbeltFix
 
                     if (_slotDataRef(storage)[pair.Key + 10].Objects.Count > 0)
                     {
-                        logger.Critical(string.Format("An item is already occupying hotkey {0} meaning the hotkey item will not be loaded correctly. This means you can lose some of your items if you save. Please report this issue to the developer.", hotkeyData.Number));
+                        Logger.Critical(string.Format("An item is already occupying hotkey {0} meaning the hotkey item will not be loaded correctly. This means you can lose some of your items if you save. Please report this issue to the developer.", hotkeyData.Number));
                         continue;
                     }
 
@@ -1746,7 +2082,7 @@ namespace ToolbeltFix
 
             private static void Postfix(HotkeyController __instance)
             {
-                if (!enabled) return;
+                if (!Enabled) return;
 
                 try
                 {
@@ -1776,33 +2112,21 @@ namespace ToolbeltFix
                 }
                 catch (Exception e)
                 {
-                    logger.LogException(e);
+                    Logger.LogException(e);
                 }
             }
         }
 
-        public class InventoryHotkeyComparer : IComparer<StorageSlot<IPickupable>>
+        public class HotkeyComparer : IComparer<StorageSlot<IPickupable>>
         {
             private readonly AccessTools.FieldRef<StorageSlot<IPickupable>, int> _indexRef = AccessTools.FieldRefAccess<StorageSlot<IPickupable>, int>("_index");
 
             public int Compare(StorageSlot<IPickupable> a, StorageSlot<IPickupable> b)
             {
-                int indexA = _indexRef(a) - (_indexRef(a) < 10 ? 0 : 20);
-                int indexB = _indexRef(b) - (_indexRef(b) < 10 ? 0 : 20);
+                int indexA = _indexRef(a) < 10 ? 0 : 20 - _indexRef(a);
+                int indexB = _indexRef(b) < 10 ? 0 : 20 - _indexRef(b);
 
-                if (b == null)
-                {
-                    return 1;
-                }
-                if (indexA > indexB)
-                {
-                    return 1;
-                }
-                if (indexA < indexB)
-                {
-                    return -1;
-                }
-                return 0;
+                return indexA - indexB;
             }
         }
     }
