@@ -32,15 +32,15 @@
   </PropertyGroup>
   <ItemGroup>
     <Reference Include="0Harmony">
-      <HintPath>..\..\..\..\..\..\Program Files\Epic Games\StrandedDeep\Stranded_Deep_Data\Managed\UnityModManager\0Harmony.dll</HintPath>
+      <HintPath>..\..\..\..\Documents\UnityModManagerInstaller\0Harmony.dll</HintPath>
       <Private>False</Private>
     </Reference>
     <Reference Include="Assembly-CSharp">
-      <HintPath>..\..\..\..\..\..\Program Files\Epic Games\StrandedDeep\Stranded_Deep_Data\Managed\Assembly-CSharp.dll</HintPath>
+      <HintPath>..\..\..\..\Documents\StrandedDeep\Epic\Epic 1.0.31.0.25\Assembly-CSharp.dll</HintPath>
       <Private>False</Private>
     </Reference>
     <Reference Include="Assembly-CSharp-firstpass">
-      <HintPath>..\..\..\..\..\..\Program Files\Epic Games\StrandedDeep\Stranded_Deep_Data\Managed\Assembly-CSharp-firstpass.dll</HintPath>
+      <HintPath>..\..\..\..\Documents\StrandedDeep\Epic\Epic 1.0.31.0.25\Assembly-CSharp-firstpass.dll</HintPath>
       <Private>False</Private>
     </Reference>
     <Reference Include="bolt">
@@ -49,6 +49,10 @@
     </Reference>
     <Reference Include="bolt.user">
       <HintPath>..\..\..\..\..\..\Program Files\Epic Games\StrandedDeep\Stranded_Deep_Data\Managed\bolt.user.dll</HintPath>
+      <Private>False</Private>
+    </Reference>
+    <Reference Include="Rewired_Core">
+      <HintPath>..\..\..\..\..\..\Program Files\Epic Games\StrandedDeep\Stranded_Deep_Data\Managed\Rewired_Core.dll</HintPath>
       <Private>False</Private>
     </Reference>
     <Reference Include="Sirenix.Serialization">
@@ -65,10 +69,6 @@
     <Reference Include="System.Xml" />
     <Reference Include="UnityEngine">
       <HintPath>..\..\..\..\..\..\Program Files\Epic Games\StrandedDeep\Stranded_Deep_Data\Managed\UnityEngine.dll</HintPath>
-      <Private>False</Private>
-    </Reference>
-    <Reference Include="UnityEngine.AudioModule">
-      <HintPath>..\..\..\..\..\..\Program Files\Epic Games\StrandedDeep\Stranded_Deep_Data\Managed\UnityEngine.AudioModule.dll</HintPath>
       <Private>False</Private>
     </Reference>
     <Reference Include="UnityEngine.CoreModule">
@@ -96,7 +96,7 @@
       <Private>False</Private>
     </Reference>
     <Reference Include="UnityModManager">
-      <HintPath>..\..\..\..\..\..\Program Files\Epic Games\StrandedDeep\Stranded_Deep_Data\Managed\UnityModManager\UnityModManager.dll</HintPath>
+      <HintPath>..\..\..\..\Documents\UnityModManagerInstaller\UnityModManager.dll</HintPath>
       <Private>False</Private>
     </Reference>
   </ItemGroup>
