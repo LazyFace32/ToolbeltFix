@@ -144,6 +144,8 @@ namespace ToolbeltFix
         private static string originalNotificationMessage;
         private static bool silentSlotStorageTransfer;
 
+        private static InteractiveType InteractiveType_CONTAINER;
+
         private static HotkeyComparer HotkeyComparison { get; } = new HotkeyComparer();
 
         protected static UnityModManager.ModEntry.ModLogger Logger { get; private set; }
@@ -197,6 +199,16 @@ namespace ToolbeltFix
 #endif
 
             VersionChecker.CheckVersion(modEntry);
+
+            if (Enum.TryParse("CONTAINER", out InteractiveType CONTAINER))
+            {
+                InteractiveType_CONTAINER = CONTAINER;
+            }
+            else
+            {
+                InteractiveType_CONTAINER = InteractiveType.CONTAINER;
+                Logger.Error("Could not load the container crate type. This could have unexpected side effects.");
+            }
 
             return true;
         }
@@ -591,7 +603,7 @@ namespace ToolbeltFix
             {
                 return false;
             }
-            if (!_storeOtherStorageRef(__instance) && pickupable.CraftingType.InteractiveType == InteractiveType.CONTAINER)
+            if (!_storeOtherStorageRef(__instance) && pickupable.CraftingType.InteractiveType == InteractiveType_CONTAINER)
             {
                 if (notification)
                 {
@@ -1767,7 +1779,7 @@ namespace ToolbeltFix
                     }
                     else if (!obj.IsNullOrDestroyed())
                     {
-                        if (obj.CraftingType.InteractiveType == InteractiveType.CONTAINER && !Settings.allowContainerCrates)
+                        if (obj.CraftingType.InteractiveType == InteractiveType_CONTAINER && !Settings.allowContainerCrates)
                         {
                             LocalizedNotification.Post(_playerRef(__instance), NotificationPriority.Low, 4f, "Cannot assign container crates to the toolbelt.");
                             _viewRef(__instance)?.OnAssignmentFailed();
