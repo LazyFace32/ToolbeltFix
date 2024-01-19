@@ -478,6 +478,12 @@ namespace ToolbeltFix
             }
             else
             {
+                if (notificationHandler != null)
+                {
+                    Timing.KillCoroutines(notificationHandler);
+                    modEntry.CustomRequirements = originalNotificationMessage;
+                }
+
                 Options.GeneralSettings.AlwaysShowHotkeyBar = false;
             }
 
