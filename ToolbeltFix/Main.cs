@@ -99,8 +99,6 @@ namespace ToolbeltFix
     {
         private static readonly AccessTools.FieldRef<HotkeyController, HotkeyData[]> _hotkeysRef = AccessTools.FieldRefAccess<HotkeyController, HotkeyData[]>("_hotkeys");
 
-        private static readonly AccessTools.FieldRef<HotkeyElementView, UImageViewAdapter> _iconRef = AccessTools.FieldRefAccess<HotkeyElementView, UImageViewAdapter>("_icon");
-
         private static readonly AccessTools.FieldRef<StorageSlot<IPickupable>, int> _indexRef = AccessTools.FieldRefAccess<StorageSlot<IPickupable>, int>("_index");
 
         private static readonly AccessTools.FieldRef<SlotStorage, List<StorageSlot<IPickupable>>> _slotDataRef = AccessTools.FieldRefAccess<SlotStorage, List<StorageSlot<IPickupable>>>("_slotData");
@@ -125,6 +123,8 @@ namespace ToolbeltFix
         public static readonly Dictionary<HotkeyData, ICollection<MiniGuid>> _occupied = new Dictionary<HotkeyData, ICollection<MiniGuid>>();
         [SaveOnReload]
         public static readonly Dictionary<HotkeyData, LinkedList<MiniGuid>> _reserved = new Dictionary<HotkeyData, LinkedList<MiniGuid>>();
+        [SaveOnReload]
+        public static readonly Dictionary<HotkeyData, Property<bool>> _rememberHotkey = new Dictionary<HotkeyData, Property<bool>>();
 
         [SaveOnReload]
         public static EventManager.EventDelegate<QuickAccessSlotUnlockedEvent> EventManager_QuickAccessSlotUnlocked_Event;
@@ -135,6 +135,7 @@ namespace ToolbeltFix
 
         private static readonly Dictionary<HotkeyData, ICollection<MiniGuid>> _occupied = new Dictionary<HotkeyData, ICollection<MiniGuid>>();
         private static readonly Dictionary<HotkeyData, LinkedList<MiniGuid>> _reserved = new Dictionary<HotkeyData, LinkedList<MiniGuid>>();
+        private static readonly Dictionary<HotkeyData, Property<bool>> _rememberHotkey = new Dictionary<HotkeyData, Property<bool>>();
 
         private static EventManager.EventDelegate<QuickAccessSlotUnlockedEvent> EventManager_QuickAccessSlotUnlocked_Event;
         private static EventManager.EventDelegate<OptionsAppliedEvent> EventManager_OptionsApplied_Event;
@@ -142,9 +143,6 @@ namespace ToolbeltFix
 
         internal static Color hotkeyElementEmptyColor = new Color(0.4f, 0.4f, 0.4f, 0.65f);
         internal static Color hotkeyElementColor = Color.white;
-
-        private static IList<HotkeyElementView> kbHotkeyElements;
-        private static IList<HotkeyElementView> dpHotkeyElements;
 
         private static CoroutineHandle notificationHandler;
         private static string originalNotificationMessage;
@@ -246,9 +244,6 @@ namespace ToolbeltFix
 
                     InitCanvas();
                     canvas.SetActive(canvasActive);
-
-                    kbHotkeyElements = _elementsRef(_kbViewRef(_viewRef(PlayerRegistry.LocalPlayer.Hotkeys) as PlatformHotkeyViewProvider) as UHotkeyView);
-                    dpHotkeyElements = _elementsRef(_dpViewRef(_viewRef(PlayerRegistry.LocalPlayer.Hotkeys) as PlatformHotkeyViewProvider) as UHotkeyView);
 
                     if (storagePresenters.Count == 0)
                     {
@@ -403,13 +398,11 @@ namespace ToolbeltFix
 
                 if (_occupied[hotkeyData].Count == 0 && _reserved[hotkeyData].Count > 0 && Settings.rememberToolbelt)
                 {
-                    _iconRef(kbHotkeyElements[i - 10]).Color = hotkeyElementEmptyColor;
-                    if (i - 10 < dpHotkeyElements.Count) _iconRef(dpHotkeyElements[i - 10]).Color = hotkeyElementEmptyColor;
+                    _rememberHotkey[hotkeyData].Value = true;
                 }
                 else
                 {
-                    _iconRef(kbHotkeyElements[i - 10]).Color = hotkeyElementColor;
-                    if (i - 10 < dpHotkeyElements.Count) _iconRef(dpHotkeyElements[i - 10]).Color = hotkeyElementColor;
+                    _rememberHotkey[hotkeyData].Value = false;
                 }
             }
 
@@ -421,8 +414,7 @@ namespace ToolbeltFix
                 {
                     HotkeyData hotkeyData = _hotkeysRef(hotkeyController)[_indexRef(slot) - 10];
 
-                    _iconRef(kbHotkeyElements[_indexRef(slot) - 10]).Color = hotkeyElementColor;
-                    if (_indexRef(slot) - 10 < dpHotkeyElements.Count) _iconRef(dpHotkeyElements[_indexRef(slot) - 10]).Color = hotkeyElementColor;
+                    _rememberHotkey[hotkeyData].Value = false;
                 }
             }
         }
@@ -670,8 +662,7 @@ namespace ToolbeltFix
                 {
                     if (Settings.rememberToolbelt)
                     {
-                        _iconRef(kbHotkeyElements[_indexRef(storageSlot) - 10]).Color = hotkeyElementEmptyColor;
-                        if (_indexRef(storageSlot) - 10 < dpHotkeyElements.Count) _iconRef(dpHotkeyElements[_indexRef(storageSlot) - 10]).Color = hotkeyElementEmptyColor;
+                        _rememberHotkey[hotkeyData].Value = true;
                     }
                     else
                     {
@@ -712,8 +703,7 @@ namespace ToolbeltFix
                             _reserved[hotkeyData].RemoveFirst();
                         }
 
-                        _iconRef(kbHotkeyElements[_indexRef(slot) - 10]).Color = hotkeyElementColor;
-                        if (_indexRef(slot) - 10 < dpHotkeyElements.Count) _iconRef(dpHotkeyElements[_indexRef(slot) - 10]).Color = hotkeyElementColor;
+                        _rememberHotkey[hotkeyData].Value = false;
                     }
 
                     pickupable.transform.CheckForProjectilesInChildren();
@@ -820,6 +810,8 @@ namespace ToolbeltFix
         private static void ClearHotkey(HotkeyData hotkeyData)
         {
             hotkeyData.CraftingType.Value = CraftingType.Empty;
+            _rememberHotkey[hotkeyData].Value = false;
+
             _occupied[hotkeyData].Clear();
             _reserved[hotkeyData].Clear();
         }
@@ -946,8 +938,7 @@ namespace ToolbeltFix
                                 _reserved[hotkeyData].RemoveFirst();
                             }
 
-                            _iconRef(kbHotkeyElements[_indexRef(slot) - 10]).Color = hotkeyElementColor;
-                            if (_indexRef(slot) - 10 < dpHotkeyElements.Count) _iconRef(dpHotkeyElements[_indexRef(slot) - 10]).Color = hotkeyElementColor;
+                            _rememberHotkey[hotkeyData].Value = false;
                         }
                     }
 
@@ -1041,7 +1032,6 @@ namespace ToolbeltFix
                     if (!__instance.Name.Equals("INVENTORY_MENU_BACKPACK_TITLE")) return true;
 
                     HotkeyData pickupableHotkeyData = null;
-                    int hotkeySlotIndex = -1;
 
                     if (slotStorage_HotkeyController.TryGetValue(__instance, out HotkeyController hotkeyController))
                     {
@@ -1056,7 +1046,6 @@ namespace ToolbeltFix
                                 if (_occupied[hotkeyData].Count == 0)
                                 {
                                     pickupableHotkeyData = hotkeyData;
-                                    hotkeySlotIndex = i;
                                 }
 
                                 break;
@@ -1077,8 +1066,7 @@ namespace ToolbeltFix
                         {
                             if (Settings.rememberToolbelt)
                             {
-                                _iconRef(kbHotkeyElements[hotkeySlotIndex - 10]).Color = hotkeyElementEmptyColor;
-                                if (hotkeySlotIndex - 10 < dpHotkeyElements.Count) _iconRef(dpHotkeyElements[hotkeySlotIndex - 10]).Color = hotkeyElementEmptyColor;
+                                _rememberHotkey[pickupableHotkeyData].Value = true;
                             }
                             else
                             {
@@ -1468,26 +1456,34 @@ namespace ToolbeltFix
             }
         }
 
-        [HarmonyPatch(typeof(PlatformHotkeyViewProvider), nameof(PlatformHotkeyViewProvider.Initialize))]
-        private class PlatformHotkeyViewProvider_Initialize_Patch
+        [HarmonyPatch(typeof(HotkeyElementView), nameof(HotkeyElementView.Initialize))]
+        private class HotkeyElementView_Initialize_Patch
         {
-            private static readonly AccessTools.FieldRef<PlatformHotkeyViewProvider, HotkeyView> _kbViewRef = AccessTools.FieldRefAccess<PlatformHotkeyViewProvider, HotkeyView>("_kbView");
-            private static readonly AccessTools.FieldRef<PlatformHotkeyViewProvider, HotkeyView> _dpViewRef = AccessTools.FieldRefAccess<PlatformHotkeyViewProvider, HotkeyView>("_dpView");
+            private static readonly AccessTools.FieldRef<HotkeyElementView, UImageViewAdapter> _iconRef = AccessTools.FieldRefAccess<HotkeyElementView, UImageViewAdapter>("_icon");
 
-            private static readonly AccessTools.FieldRef<UHotkeyView, IList<HotkeyElementView>> _elementsRef = AccessTools.FieldRefAccess<UHotkeyView, IList<HotkeyElementView>>("_elements");
-
-            private static void Postfix(PlatformHotkeyViewProvider __instance)
+            private static void Postfix(HotkeyElementView __instance, HotkeyData hotkeyData)
             {
                 if (!Enabled) return;
 
                 try
                 {
-                    kbHotkeyElements = _elementsRef(_kbViewRef(__instance) as UHotkeyView);
-                    dpHotkeyElements = _elementsRef(_dpViewRef(__instance) as UHotkeyView);
+                    _rememberHotkey[hotkeyData].ValueChanged += (rememberHotkey) => HotkeyData_RememberHotkeyValueChanged(__instance, rememberHotkey);
                 }
                 catch (Exception e)
                 {
                     Logger.LogException(e);
+                }
+            }
+
+            private static void HotkeyData_RememberHotkeyValueChanged(HotkeyElementView __instance, bool rememberHotkey)
+            {
+                if (rememberHotkey)
+                {
+                    _iconRef(__instance).Color = hotkeyElementEmptyColor;
+                }
+                else
+                {
+                    _iconRef(__instance).Color = hotkeyElementColor;
                 }
             }
         }
@@ -1519,6 +1515,7 @@ namespace ToolbeltFix
 
                         _occupied[_hotkeysRef(__instance)[i]] = new HashSet<MiniGuid>();
                         _reserved[_hotkeysRef(__instance)[i]] = new LinkedList<MiniGuid>();
+                        _rememberHotkey[_hotkeysRef(__instance)[i]] = new Property<bool>(false);
                     }
                     return false;
                 }
@@ -1602,9 +1599,11 @@ namespace ToolbeltFix
                     {
                         hotkeyData.Locked.ClearSubscribers();
                         hotkeyData.CraftingType.ClearSubscribers();
+                        _rememberHotkey[hotkeyData].ClearSubscribers();
 
                         _occupied.Remove(hotkeyData);
                         _reserved.Remove(hotkeyData);
+                        _rememberHotkey.Remove(hotkeyData);
                     }
 
                     if (_playerRef(__instance).IsNullOrDestroyed())
@@ -1892,9 +1891,6 @@ namespace ToolbeltFix
                     if (success)
                     {
                         ClearHotkey(hotkeyData);
-
-                        _iconRef(kbHotkeyElements[number]).Color = hotkeyElementColor;
-                        if (number < dpHotkeyElements.Count) _iconRef(dpHotkeyElements[number]).Color = hotkeyElementColor;
                         return true;
                     }
                 }
@@ -1910,7 +1906,6 @@ namespace ToolbeltFix
                 bool transferPickupables = true;
 
                 HotkeyData existingHotkeyData = null;
-                int existingHotkeyDataIndex = -1;
 
                 if (obj.Equals(_playerRef(__instance).Holder.CurrentObject))
                 {
@@ -1921,7 +1916,6 @@ namespace ToolbeltFix
                         if (_occupied[data].Contains(obj.ReferenceId))
                         {
                             existingHotkeyData = data;
-                            existingHotkeyDataIndex = i;
                             break;
                         }
                     }
@@ -1959,8 +1953,7 @@ namespace ToolbeltFix
                         {
                             if (_reserved[existingHotkeyData].Count > 0 && Settings.rememberToolbelt)
                             {
-                                _iconRef(kbHotkeyElements[existingHotkeyDataIndex - 10]).Color = hotkeyElementEmptyColor;
-                                if (existingHotkeyDataIndex - 10 < dpHotkeyElements.Count) _iconRef(dpHotkeyElements[existingHotkeyDataIndex - 10]).Color = hotkeyElementEmptyColor;
+                                _rememberHotkey[hotkeyData].Value = true;
                             }
                             else
                             {
@@ -2035,8 +2028,7 @@ namespace ToolbeltFix
                             {
                                 if (_reserved[data].Count > 0 && Settings.rememberToolbelt)
                                 {
-                                    _iconRef(kbHotkeyElements[i - 10]).Color = hotkeyElementEmptyColor;
-                                    if (i - 10 < dpHotkeyElements.Count) _iconRef(dpHotkeyElements[i - 10]).Color = hotkeyElementEmptyColor;
+                                    _rememberHotkey[hotkeyData].Value = true;
                                 }
                                 else
                                 {
@@ -2086,9 +2078,6 @@ namespace ToolbeltFix
                 }
 
                 hotkeyData.CraftingType.Value = obj.CraftingType;
-
-                _iconRef(kbHotkeyElements[number]).Color = hotkeyElementColor;
-                if (number < dpHotkeyElements.Count) _iconRef(dpHotkeyElements[number]).Color = hotkeyElementColor;
             }
         }
 
@@ -2300,9 +2289,7 @@ namespace ToolbeltFix
                         if (!craftingType2.Equals(CraftingType.Empty))
                         {
                             hotkeyData.CraftingType.Value = craftingType2;
-
-                            _iconRef(kbHotkeyElements[i]).Color = hotkeyElementEmptyColor;
-                            if (i < dpHotkeyElements.Count) _iconRef(dpHotkeyElements[i]).Color = hotkeyElementEmptyColor;
+                            _rememberHotkey[hotkeyData].Value = true;
                         }
                         else
                         {
