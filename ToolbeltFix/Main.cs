@@ -117,6 +117,14 @@ namespace ToolbeltFix
 
 #if DEBUG
         [SaveOnReload]
+        public static GameObject _quantityGroupPrefab;
+
+        [SaveOnReload]
+        public static readonly Dictionary<HotkeyElementView, GameObject> _quantityGroup = new Dictionary<HotkeyElementView, GameObject>();
+        [SaveOnReload]
+        public static readonly Dictionary<HotkeyElementView, ILabelViewAdapter> _quantityLabel = new Dictionary<HotkeyElementView, ILabelViewAdapter>();
+
+        [SaveOnReload]
         public static readonly Dictionary<ISlotStorage<IPickupable>, HotkeyController> slotStorage_HotkeyController = new Dictionary<ISlotStorage<IPickupable>, HotkeyController>();
 
         [SaveOnReload]
@@ -125,17 +133,25 @@ namespace ToolbeltFix
         public static readonly Dictionary<HotkeyData, LinkedList<MiniGuid>> _reserved = new Dictionary<HotkeyData, LinkedList<MiniGuid>>();
         [SaveOnReload]
         public static readonly Dictionary<HotkeyData, Property<bool>> _rememberHotkey = new Dictionary<HotkeyData, Property<bool>>();
+        [SaveOnReload]
+        public static readonly Dictionary<HotkeyData, Property<int>> _quantity = new Dictionary<HotkeyData, Property<int>>();
 
         [SaveOnReload]
         public static EventManager.EventDelegate<QuickAccessSlotUnlockedEvent> EventManager_QuickAccessSlotUnlocked_Event;
         [SaveOnReload]
         public static EventManager.EventDelegate<OptionsAppliedEvent> EventManager_OptionsApplied_Event;
 #else
+        private static GameObject _quantityGroupPrefab;
+
+        private static readonly Dictionary<HotkeyElementView, GameObject> _quantityGroup = new Dictionary<HotkeyElementView, GameObject>();
+        private static readonly Dictionary<HotkeyElementView, ILabelViewAdapter> _quantityLabel = new Dictionary<HotkeyElementView, ILabelViewAdapter>();
+
         private static readonly Dictionary<ISlotStorage<IPickupable>, HotkeyController> slotStorage_HotkeyController = new Dictionary<ISlotStorage<IPickupable>, HotkeyController>();
 
         private static readonly Dictionary<HotkeyData, ICollection<MiniGuid>> _occupied = new Dictionary<HotkeyData, ICollection<MiniGuid>>();
         private static readonly Dictionary<HotkeyData, LinkedList<MiniGuid>> _reserved = new Dictionary<HotkeyData, LinkedList<MiniGuid>>();
         private static readonly Dictionary<HotkeyData, Property<bool>> _rememberHotkey = new Dictionary<HotkeyData, Property<bool>>();
+        private static readonly Dictionary<HotkeyData, Property<int>> _quantity = new Dictionary<HotkeyData, Property<int>>();
 
         private static EventManager.EventDelegate<QuickAccessSlotUnlockedEvent> EventManager_QuickAccessSlotUnlocked_Event;
         private static EventManager.EventDelegate<OptionsAppliedEvent> EventManager_OptionsApplied_Event;
@@ -147,6 +163,7 @@ namespace ToolbeltFix
         private static CoroutineHandle notificationHandler;
         private static string originalNotificationMessage;
         private static bool silentSlotStorageTransfer;
+        private static bool worldLoaded;
 
         private static InteractiveType InteractiveType_CONTAINER;
 
@@ -161,8 +178,6 @@ namespace ToolbeltFix
 #endif
 
 #if DEBUG
-        private static bool worldLoaded;
-
         private static Vector2 referenceResolution = new Vector2(1280f, 720f);
         private static GameObject canvas;
         private static Text[] currentObjectTexts;
@@ -189,9 +204,7 @@ namespace ToolbeltFix
             harmony.PatchAll(Assembly.GetExecutingAssembly());
 #endif
 
-#if DEBUG
             modEntry.OnUpdate = OnUpdate;
-#endif
             modEntry.OnToggle = OnToggle;
             modEntry.OnSaveGUI = OnSaveGUI;
             modEntry.OnGUI = OnGUI;
@@ -226,13 +239,16 @@ namespace ToolbeltFix
 #endif
 
 #if DEBUG
-        private static readonly AccessTools.FieldRef<UHotkeyView, IList<HotkeyElementView>> _elementsRef = AccessTools.FieldRefAccess<UHotkeyView, IList<HotkeyElementView>>("_elements");
+        private static readonly AccessTools.FieldRef<Property<int>, Action<int>> ValueChangedRef = AccessTools.FieldRefAccess<Property<int>, Action<int>>("ValueChanged");
         private static readonly AccessTools.FieldRef<HotkeyController, HotkeyView> _viewRef = AccessTools.FieldRefAccess<HotkeyController, HotkeyView>("_view");
 
         private static readonly AccessTools.FieldRef<PlatformHotkeyViewProvider, HotkeyView> _kbViewRef = AccessTools.FieldRefAccess<PlatformHotkeyViewProvider, HotkeyView>("_kbView");
         private static readonly AccessTools.FieldRef<PlatformHotkeyViewProvider, HotkeyView> _dpViewRef = AccessTools.FieldRefAccess<PlatformHotkeyViewProvider, HotkeyView>("_dpView");
 
+        private static readonly AccessTools.FieldRef<UHotkeyView, IList<HotkeyElementView>> _elementsRef = AccessTools.FieldRefAccess<UHotkeyView, IList<HotkeyElementView>>("_elements");
+
         private static readonly AccessTools.FieldRef<SlotStorage, StorageSlot<IPickupable>> _selectedSlotRef = AccessTools.FieldRefAccess<SlotStorage, StorageSlot<IPickupable>>("_selectedSlot");
+#endif
 
         internal static void OnUpdate(UnityModManager.ModEntry modEntry, float dt)
         {
@@ -242,6 +258,7 @@ namespace ToolbeltFix
                 {
                     worldLoaded = true;
 
+#if DEBUG
                     InitCanvas();
                     canvas.SetActive(canvasActive);
 
@@ -255,12 +272,36 @@ namespace ToolbeltFix
                             storagePresenters.Add(_radialPresenterRef(storagePresenter), storagePresenter);
                         }
                     }
+
+                    foreach (HotkeyElementView hotkeyElementView in _elementsRef(_kbViewRef(_viewRef(PlayerRegistry.LocalPlayer.Hotkeys) as PlatformHotkeyViewProvider) as UHotkeyView))
+                    {
+                        UnityEngine.Object.Destroy(_quantityGroup[hotkeyElementView]);
+                        CreateQuantityGroup(hotkeyElementView);
+                    }
+
+                    foreach (HotkeyElementView hotkeyElementView in _elementsRef(_dpViewRef(_viewRef(PlayerRegistry.LocalPlayer.Hotkeys) as PlatformHotkeyViewProvider) as UHotkeyView))
+                    {
+                        UnityEngine.Object.Destroy(_quantityGroup[hotkeyElementView]);
+                        CreateQuantityGroup(hotkeyElementView);
+                    }
+
+                    foreach (HotkeyData hotkeyData in _hotkeysRef(PlayerRegistry.LocalPlayer.Hotkeys))
+                    {
+                        if (hotkeyData.Locked.Value) break;
+
+                        ValueChangedRef(_quantity[hotkeyData])?.Invoke(_occupied[hotkeyData].Count);
+                    }
+#endif
                 }
                 else if ((!StrandedWorld.Instance || PlayerRegistry.AllPlayers.Count == 0) && worldLoaded)
                 {
+                    _quantityGroup.Clear();
+                    _quantityLabel.Clear();
+
                     worldLoaded = false;
                 }
 
+#if DEBUG
                 if (!worldLoaded) return;
 
                 IPlayer player = PlayerRegistry.LocalPlayer;
@@ -337,6 +378,7 @@ namespace ToolbeltFix
                     hotkeyTexts[4].text += string.Format("Occupied: {0}\n", occupied.Join() + (occupied.Count() < _occupied[hotkeyData].Count ? "..." : ""));
                     hotkeyTexts[4].text += string.Format("Reserved: {0}\n", reserved.Join() + (reserved.Count() < _reserved[hotkeyData].Count ? "..." : ""));
                 }
+#endif
             }
             catch (Exception e)
             {
@@ -344,6 +386,7 @@ namespace ToolbeltFix
             }
         }
 
+#if DEBUG
         private static readonly AccessTools.FieldRef<TestingConsole, bool> TestingConsole_openRef = AccessTools.FieldRefAccess<TestingConsole, bool>("_open");
 
         private static bool IsConsoleVisible()
@@ -658,6 +701,8 @@ namespace ToolbeltFix
 
                 _occupied[hotkeyData].Remove(pickupable.ReferenceId);
 
+                _quantity[hotkeyData].Value = _occupied[hotkeyData].Count;
+
                 if (_occupied[hotkeyData].Count == 0)
                 {
                     if (Settings.rememberToolbelt)
@@ -703,6 +748,7 @@ namespace ToolbeltFix
                             _reserved[hotkeyData].RemoveFirst();
                         }
 
+                        _quantity[hotkeyData].Value = _occupied[hotkeyData].Count;
                         _rememberHotkey[hotkeyData].Value = false;
                     }
 
@@ -811,9 +857,26 @@ namespace ToolbeltFix
         {
             hotkeyData.CraftingType.Value = CraftingType.Empty;
             _rememberHotkey[hotkeyData].Value = false;
+            _quantity[hotkeyData].Value = 0;
 
             _occupied[hotkeyData].Clear();
             _reserved[hotkeyData].Clear();
+        }
+
+        private static void CreateQuantityGroup(HotkeyElementView __instance)
+        {
+            _quantityGroup[__instance] = UnityEngine.Object.Instantiate(_quantityGroupPrefab, __instance.transform);
+            _quantityGroup[__instance].transform.localScale = Vector3.one * 0.7f;
+
+            _quantityGroup[__instance].transform.Find("Image - Navigate Left").gameObject.SetActive(false);
+            _quantityGroup[__instance].transform.Find("Image - Navigate Right").gameObject.SetActive(false);
+            _quantityLabel[__instance] = _quantityGroup[__instance].transform.Find("Label - Quantity").GetComponent<TMPLabelViewAdapter>();
+
+            RectTransform rectTransform = _quantityGroup[__instance].GetComponent<RectTransform>();
+            rectTransform.anchoredPosition = new Vector2(0, -rectTransform.sizeDelta.y * 0.8f);
+            rectTransform.SetSizeWithCurrentAnchors(RectTransform.Axis.Horizontal, rectTransform.sizeDelta.x * 0.74f);
+
+            _quantityGroup[__instance].SetActive(false);
         }
 
         [HarmonyPatch(typeof(GeneralSettings), nameof(GeneralSettings.Load))]
@@ -938,6 +1001,7 @@ namespace ToolbeltFix
                                 _reserved[hotkeyData].RemoveFirst();
                             }
 
+                            _quantity[hotkeyData].Value = _occupied[hotkeyData].Count;
                             _rememberHotkey[hotkeyData].Value = false;
                         }
                     }
@@ -1042,6 +1106,8 @@ namespace ToolbeltFix
                             if (_occupied[hotkeyData].Contains(pickupable.ReferenceId))
                             {
                                 _occupied[hotkeyData].Remove(pickupable.ReferenceId);
+
+                                _quantity[hotkeyData].Value = _occupied[hotkeyData].Count;
 
                                 if (_occupied[hotkeyData].Count == 0)
                                 {
@@ -1467,7 +1533,10 @@ namespace ToolbeltFix
 
                 try
                 {
+                    CreateQuantityGroup(__instance);
+
                     _rememberHotkey[hotkeyData].ValueChanged += (rememberHotkey) => HotkeyData_RememberHotkeyValueChanged(__instance, rememberHotkey);
+                    _quantity[hotkeyData].ValueChanged += (quantity) => HotkeyData_QuantityValueChanged(__instance, quantity);
                 }
                 catch (Exception e)
                 {
@@ -1485,6 +1554,18 @@ namespace ToolbeltFix
                 {
                     _iconRef(__instance).Color = hotkeyElementColor;
                 }
+            }
+
+            private static void HotkeyData_QuantityValueChanged(HotkeyElementView __instance, int quantity)
+            {
+                if (quantity == 0)
+                {
+                    _quantityGroup[__instance].SetActive(false);
+                    return;
+                }
+
+                _quantityLabel[__instance].Text = string.Format("{0}", quantity);
+                _quantityGroup[__instance].SetActive(quantity > 1);
             }
         }
 
@@ -1516,6 +1597,7 @@ namespace ToolbeltFix
                         _occupied[_hotkeysRef(__instance)[i]] = new HashSet<MiniGuid>();
                         _reserved[_hotkeysRef(__instance)[i]] = new LinkedList<MiniGuid>();
                         _rememberHotkey[_hotkeysRef(__instance)[i]] = new Property<bool>(false);
+                        _quantity[_hotkeysRef(__instance)[i]] = new Property<int>(0);
                     }
                     return false;
                 }
@@ -1541,6 +1623,8 @@ namespace ToolbeltFix
             private static readonly MethodInfo Holder_Dropped = AccessTools.Method(typeof(HotkeyController), "Holder_Dropped");
             private static readonly MethodInfo LoadOptions = AccessTools.Method(typeof(HotkeyController), "LoadOptions");
 
+            private static readonly MethodInfo InventoryRadialMenuElement_View = AccessTools.PropertyGetter(typeof(InventoryRadialMenuElement), "View");
+
             private static bool Prefix(HotkeyController __instance, IPlayer player)
             {
                 if (!Enabled) return true;
@@ -1559,9 +1643,15 @@ namespace ToolbeltFix
                         }
                         return false;
                     }
+
+                    _inventoryRadialMenuRef(__instance) = _playerRef(__instance).PlayerUI.GetController<InventoryRadialMenuPresenter>();
+
+                    InventoryRadialMenuElement inventoryRadialMenuElement = _inventoryRadialMenuRef(__instance).View.ElementPrefab;
+                    UInventoryRadialMenuElementViewAdapter inventoryRadialMenuElementView = InventoryRadialMenuElement_View.Invoke(inventoryRadialMenuElement, null) as UInventoryRadialMenuElementViewAdapter;
+                    _quantityGroupPrefab = inventoryRadialMenuElementView.QuantityGroup;
+
                     _viewRef(__instance).Initialize(_hotkeysRef(__instance));
                     _playerRef(__instance).Holder.Dropped += AccessTools.MethodDelegate<Action<IPickupable>>(Holder_Dropped, __instance);
-                    _inventoryRadialMenuRef(__instance) = _playerRef(__instance).PlayerUI.GetController<InventoryRadialMenuPresenter>();
                     SubscribeToInputEvents.Invoke(__instance, new object[] { _playerRef(__instance).Input });
                     EventManager_QuickAccessSlotUnlocked_Event = new EventManager.EventDelegate<QuickAccessSlotUnlockedEvent>(AccessTools.MethodDelegate<Action<QuickAccessSlotUnlockedEvent>>(EventManager_QuickAccessSlotUnlocked, __instance));
                     EventManager_OptionsApplied_Event = new EventManager.EventDelegate<OptionsAppliedEvent>(AccessTools.MethodDelegate<Action<OptionsAppliedEvent>>(EventManager_OptionsApplied, __instance));
@@ -1584,7 +1674,13 @@ namespace ToolbeltFix
             private static readonly AccessTools.FieldRef<HotkeyController, InventoryRadialMenuPresenter> _inventoryRadialMenuRef = AccessTools.FieldRefAccess<HotkeyController, InventoryRadialMenuPresenter>("_inventoryRadialMenu");
             private static readonly AccessTools.FieldRef<HotkeyController, bool> _subbedToInventoryEventsRef = AccessTools.FieldRefAccess<HotkeyController, bool>("_subbedToInventoryEvents");
             private static readonly AccessTools.FieldRef<HotkeyController, HotkeyData[]> _hotkeysRef = AccessTools.FieldRefAccess<HotkeyController, HotkeyData[]>("_hotkeys");
+            private static readonly AccessTools.FieldRef<HotkeyController, HotkeyView> _viewRef = AccessTools.FieldRefAccess<HotkeyController, HotkeyView>("_view");
             private static readonly AccessTools.FieldRef<HotkeyController, IPlayer> _playerRef = AccessTools.FieldRefAccess<HotkeyController, IPlayer>("_player");
+
+            private static readonly AccessTools.FieldRef<PlatformHotkeyViewProvider, HotkeyView> _kbViewRef = AccessTools.FieldRefAccess<PlatformHotkeyViewProvider, HotkeyView>("_kbView");
+            private static readonly AccessTools.FieldRef<PlatformHotkeyViewProvider, HotkeyView> _dpViewRef = AccessTools.FieldRefAccess<PlatformHotkeyViewProvider, HotkeyView>("_dpView");
+
+            private static readonly AccessTools.FieldRef<UHotkeyView, IList<HotkeyElementView>> _elementsRef = AccessTools.FieldRefAccess<UHotkeyView, IList<HotkeyElementView>>("_elements");
 
             private static readonly MethodInfo UnsubscribeFromInputEvents = AccessTools.Method(typeof(HotkeyController), "UnsubscribeFromInputEvents");
             private static readonly MethodInfo Holder_Dropped = AccessTools.Method(typeof(HotkeyController), "Holder_Dropped");
@@ -1600,10 +1696,12 @@ namespace ToolbeltFix
                         hotkeyData.Locked.ClearSubscribers();
                         hotkeyData.CraftingType.ClearSubscribers();
                         _rememberHotkey[hotkeyData].ClearSubscribers();
+                        _quantity[hotkeyData].ClearSubscribers();
 
                         _occupied.Remove(hotkeyData);
                         _reserved.Remove(hotkeyData);
                         _rememberHotkey.Remove(hotkeyData);
+                        _quantity.Remove(hotkeyData);
                     }
 
                     if (_playerRef(__instance).IsNullOrDestroyed())
@@ -1612,6 +1710,18 @@ namespace ToolbeltFix
                     }
 
                     slotStorage_HotkeyController.Remove(_playerRef(__instance).Inventory.GetSlotStorage());
+
+                    foreach (HotkeyElementView hotkeyElementView in _elementsRef(_kbViewRef(_viewRef(__instance) as PlatformHotkeyViewProvider) as UHotkeyView))
+                    {
+                        _quantityGroup.Remove(hotkeyElementView);
+                        _quantityLabel.Remove(hotkeyElementView);
+                    }
+
+                    foreach (HotkeyElementView hotkeyElementView in _elementsRef(_dpViewRef(_viewRef(__instance) as PlatformHotkeyViewProvider) as UHotkeyView))
+                    {
+                        _quantityGroup.Remove(hotkeyElementView);
+                        _quantityLabel.Remove(hotkeyElementView);
+                    }
 
                     if (_playerRef(__instance).Holder != null)
                     {
@@ -1949,6 +2059,8 @@ namespace ToolbeltFix
                         _occupied[existingHotkeyData].Remove(obj.ReferenceId);
                         _reserved[existingHotkeyData].Remove(obj.ReferenceId);
 
+                        _quantity[existingHotkeyData].Value = _occupied[existingHotkeyData].Count;
+
                         if (_occupied[existingHotkeyData].Count == 0)
                         {
                             if (_reserved[existingHotkeyData].Count > 0 && Settings.rememberToolbelt)
@@ -1986,6 +2098,7 @@ namespace ToolbeltFix
                         storage.SortSlots();
                     }
 
+                    _quantity[hotkeyData].Value = _occupied[hotkeyData].Count;
                     hotkeyData.CraftingType.Value = obj.CraftingType;
                     return true;
                 }
@@ -2023,6 +2136,8 @@ namespace ToolbeltFix
                         {
                             _occupied[data].Remove(obj.ReferenceId);
                             _reserved[data].Remove(obj.ReferenceId);
+
+                            _quantity[data].Value = _occupied[data].Count;
 
                             if (_occupied[data].Count == 0)
                             {
@@ -2077,6 +2192,7 @@ namespace ToolbeltFix
                     _inventoryRadialMenuRef(__instance).Refresh();
                 }
 
+                _quantity[hotkeyData].Value = _occupied[hotkeyData].Count;
                 hotkeyData.CraftingType.Value = obj.CraftingType;
             }
         }
@@ -2274,6 +2390,7 @@ namespace ToolbeltFix
 
                     if (_occupied[hotkeyData].Count > 0)
                     {
+                        _quantity[hotkeyData].Value = _occupied[hotkeyData].Count;
                         hotkeyData.CraftingType.Value = craftingType;
                     }
                     else if (Settings.rememberToolbelt)
