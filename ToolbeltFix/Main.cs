@@ -35,7 +35,7 @@ namespace ToolbeltFix
 
         [Space(10)]
         [Header("Cheats")]
-        [Draw("Allow Container Crates", Height = 15)] public bool allowContainerCrates = false;
+        //[Draw("Allow Container Crates", Height = 15)] public bool allowContainerCrates = false;
         //[Draw("Allow Large Items (Cheat)", Height = 15)] public bool allowLargeItems = false;
         [Draw("Allow Stackable Toolbelt Slots", Height = 15)] public bool allowStackableToolbeltSlots = false;
 
