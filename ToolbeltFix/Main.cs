@@ -1651,10 +1651,10 @@ namespace ToolbeltFix
                     _quantityGroupPrefab = inventoryRadialMenuElementView.QuantityGroup;
 
                     _viewRef(__instance).Initialize(_hotkeysRef(__instance));
-                    _playerRef(__instance).Holder.Dropped += AccessTools.MethodDelegate<Action<IPickupable>>(Holder_Dropped, __instance);
+                    _playerRef(__instance).Holder.Dropped += CreateMethodDelegate<Action<IPickupable>>(Holder_Dropped, __instance);
                     SubscribeToInputEvents.Invoke(__instance, new object[] { _playerRef(__instance).Input });
-                    EventManager_QuickAccessSlotUnlocked_Event = new EventManager.EventDelegate<QuickAccessSlotUnlockedEvent>(AccessTools.MethodDelegate<Action<QuickAccessSlotUnlockedEvent>>(EventManager_QuickAccessSlotUnlocked, __instance));
-                    EventManager_OptionsApplied_Event = new EventManager.EventDelegate<OptionsAppliedEvent>(AccessTools.MethodDelegate<Action<OptionsAppliedEvent>>(EventManager_OptionsApplied, __instance));
+                    EventManager_QuickAccessSlotUnlocked_Event = new EventManager.EventDelegate<QuickAccessSlotUnlockedEvent>(CreateMethodDelegate<Action<QuickAccessSlotUnlockedEvent>>(EventManager_QuickAccessSlotUnlocked, __instance));
+                    EventManager_OptionsApplied_Event = new EventManager.EventDelegate<OptionsAppliedEvent>(CreateMethodDelegate<Action<OptionsAppliedEvent>>(EventManager_OptionsApplied, __instance));
                     EventManager.AddListener(EventManager_QuickAccessSlotUnlocked_Event);
                     EventManager.AddListener(EventManager_OptionsApplied_Event);
                     LoadOptions.Invoke(__instance, null);
@@ -1725,7 +1725,7 @@ namespace ToolbeltFix
 
                     if (_playerRef(__instance).Holder != null)
                     {
-                        _playerRef(__instance).Holder.Dropped -= AccessTools.MethodDelegate<Action<IPickupable>>(Holder_Dropped, __instance);
+                        _playerRef(__instance).Holder.Dropped -= CreateMethodDelegate<Action<IPickupable>>(Holder_Dropped, __instance);
                     }
                     if (_subbedToInventoryEventsRef(__instance) && _inventoryRadialMenuRef(__instance) != null)
                     {
@@ -2469,6 +2469,11 @@ namespace ToolbeltFix
                     Logger.LogException(e);
                 }
             }
+        }
+
+        internal static DelegateType CreateMethodDelegate<DelegateType>(MethodInfo method, object instance) where DelegateType : Delegate
+        {
+            return (DelegateType)Delegate.CreateDelegate(typeof(DelegateType), instance, method.GetBaseDefinition());
         }
 
         public class HotkeyComparer : IComparer<StorageSlot<IPickupable>>
