@@ -2011,7 +2011,7 @@ namespace ToolbeltFix
                             _reserved[hotkeyData].AddFirst(pickupable.ReferenceId);
                         }
                     }
-                    else if (refresh)
+                    else if (refresh && _inventoryRadialMenuRef(__instance) != null)
                     {
                         IList<IList<InventoryData>> inventoryData = GetInventoryData.Invoke(_inventoryRadialMenuRef(__instance).Inventory, null) as IList<IList<InventoryData>>;
                         _inventoryRadialMenuRef(__instance).Initialize(inventoryData);
@@ -2111,7 +2111,7 @@ namespace ToolbeltFix
 
                     silentSlotStorageTransfer = false;
 
-                    if (transferPickupables)
+                    if (transferPickupables && _inventoryRadialMenuRef(__instance) != null)
                     {
                         IList<IList<InventoryData>> inventoryData = GetInventoryData.Invoke(_inventoryRadialMenuRef(__instance).Inventory, null) as IList<IList<InventoryData>>;
                         _inventoryRadialMenuRef(__instance).Initialize(inventoryData);
@@ -2207,7 +2207,7 @@ namespace ToolbeltFix
                     }
                 }
 
-                if (refresh)
+                if (refresh && _inventoryRadialMenuRef(__instance) != null)
                 {
                     IList<IList<InventoryData>> inventoryData = GetInventoryData.Invoke(_inventoryRadialMenuRef(__instance).Inventory, null) as IList<IList<InventoryData>>;
                     _inventoryRadialMenuRef(__instance).Initialize(inventoryData);
