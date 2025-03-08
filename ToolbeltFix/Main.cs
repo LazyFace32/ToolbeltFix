@@ -1708,29 +1708,36 @@ namespace ToolbeltFix
                         _quantity.Remove(hotkeyData);
                     }
 
-                    if (_playerRef(__instance).IsNullOrDestroyed())
+                    if (_viewRef(__instance) != null)
                     {
-                        return false;
+                        foreach (HotkeyElementView hotkeyElementView in _elementsRef(_kbViewRef(_viewRef(__instance) as PlatformHotkeyViewProvider) as UHotkeyView))
+                        {
+                            _quantityGroup.Remove(hotkeyElementView);
+                            _quantityLabel.Remove(hotkeyElementView);
+                        }
+
+                        foreach (HotkeyElementView hotkeyElementView in _elementsRef(_dpViewRef(_viewRef(__instance) as PlatformHotkeyViewProvider) as UHotkeyView))
+                        {
+                            _quantityGroup.Remove(hotkeyElementView);
+                            _quantityLabel.Remove(hotkeyElementView);
+                        }
+                    }
+                    else if (!_playerRef(__instance).IsNullOrDestroyed() && _playerRef(__instance).Peer.IsLocalPeer())
+                    {
+                        _quantityGroup.Clear();
+                        _quantityLabel.Clear();
                     }
 
-                    slotStorage_HotkeyController.Remove(_playerRef(__instance).Inventory.GetSlotStorage());
-
-                    foreach (HotkeyElementView hotkeyElementView in _elementsRef(_kbViewRef(_viewRef(__instance) as PlatformHotkeyViewProvider) as UHotkeyView))
+                    if (!_playerRef(__instance).IsNullOrDestroyed())
                     {
-                        _quantityGroup.Remove(hotkeyElementView);
-                        _quantityLabel.Remove(hotkeyElementView);
+                        if (_playerRef(__instance).Holder != null)
+                        {
+                            _playerRef(__instance).Holder.Dropped -= CreateMethodDelegate<Action<IPickupable>>(Holder_Dropped, __instance);
+                        }
+
+                        slotStorage_HotkeyController.Remove(_playerRef(__instance).Inventory.GetSlotStorage());
                     }
 
-                    foreach (HotkeyElementView hotkeyElementView in _elementsRef(_dpViewRef(_viewRef(__instance) as PlatformHotkeyViewProvider) as UHotkeyView))
-                    {
-                        _quantityGroup.Remove(hotkeyElementView);
-                        _quantityLabel.Remove(hotkeyElementView);
-                    }
-
-                    if (_playerRef(__instance).Holder != null)
-                    {
-                        _playerRef(__instance).Holder.Dropped -= CreateMethodDelegate<Action<IPickupable>>(Holder_Dropped, __instance);
-                    }
                     if (_subbedToInventoryEventsRef(__instance) && _inventoryRadialMenuRef(__instance) != null)
                     {
                         _inventoryRadialMenuRef(__instance).View.ShowView -= __instance.Show;
