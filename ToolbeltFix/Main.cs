@@ -35,7 +35,7 @@ namespace ToolbeltFix
 
         [Space(10)]
         [Header("Cheats")]
-        [Draw("Allow Container Crates", Height = 15)] public bool allowContainerCrates = false;
+        //[Draw("Allow Container Crates", Height = 15)] public bool allowContainerCrates = false;
         //[Draw("Allow Large Items (Cheat)", Height = 15)] public bool allowLargeItems = false;
         [Draw("Allow Stackable Toolbelt Slots", Height = 15)] public bool allowStackableToolbeltSlots = false;
 
@@ -117,12 +117,9 @@ namespace ToolbeltFix
 
 #if DEBUG
         [SaveOnReload]
-        public static GameObject _quantityGroupPrefab;
-
+        public static readonly Dictionary<HotkeyController, Action<QuickAccessSlotUnlockedEvent>> EventManager_QuickAccessSlotUnlocked_Events = new Dictionary<HotkeyController, Action<QuickAccessSlotUnlockedEvent>>();
         [SaveOnReload]
-        public static readonly Dictionary<HotkeyElementView, GameObject> _quantityGroup = new Dictionary<HotkeyElementView, GameObject>();
-        [SaveOnReload]
-        public static readonly Dictionary<HotkeyElementView, ILabelViewAdapter> _quantityLabel = new Dictionary<HotkeyElementView, ILabelViewAdapter>();
+        public static readonly Dictionary<HotkeyController, Action<OptionsAppliedEvent>> EventManager_OptionsApplied_Events = new Dictionary<HotkeyController, Action<OptionsAppliedEvent>>();
 
         [SaveOnReload]
         public static readonly Dictionary<ISlotStorage<IPickupable>, HotkeyController> slotStorage_HotkeyController = new Dictionary<ISlotStorage<IPickupable>, HotkeyController>();
@@ -137,14 +134,16 @@ namespace ToolbeltFix
         public static readonly Dictionary<HotkeyData, Property<int>> _quantity = new Dictionary<HotkeyData, Property<int>>();
 
         [SaveOnReload]
-        public static EventManager.EventDelegate<QuickAccessSlotUnlockedEvent> EventManager_QuickAccessSlotUnlocked_Event;
+        public static readonly Dictionary<HotkeyElementView, GameObject> _quantityGroup = new Dictionary<HotkeyElementView, GameObject>();
         [SaveOnReload]
-        public static EventManager.EventDelegate<OptionsAppliedEvent> EventManager_OptionsApplied_Event;
-#else
-        private static GameObject _quantityGroupPrefab;
+        public static readonly Dictionary<HotkeyElementView, ILabelViewAdapter> _quantityLabel = new Dictionary<HotkeyElementView, ILabelViewAdapter>();
 
-        private static readonly Dictionary<HotkeyElementView, GameObject> _quantityGroup = new Dictionary<HotkeyElementView, GameObject>();
-        private static readonly Dictionary<HotkeyElementView, ILabelViewAdapter> _quantityLabel = new Dictionary<HotkeyElementView, ILabelViewAdapter>();
+        [SaveOnReload]
+        public static GameObject _quantityGroupPrefab;
+#else
+
+        private static readonly Dictionary<HotkeyController, Action<QuickAccessSlotUnlockedEvent>> EventManager_QuickAccessSlotUnlocked_Events = new Dictionary<HotkeyController, Action<QuickAccessSlotUnlockedEvent>>();
+        private static readonly Dictionary<HotkeyController, Action<OptionsAppliedEvent>> EventManager_OptionsApplied_Events = new Dictionary<HotkeyController, Action<OptionsAppliedEvent>>();
 
         private static readonly Dictionary<ISlotStorage<IPickupable>, HotkeyController> slotStorage_HotkeyController = new Dictionary<ISlotStorage<IPickupable>, HotkeyController>();
 
@@ -153,8 +152,10 @@ namespace ToolbeltFix
         private static readonly Dictionary<HotkeyData, Property<bool>> _rememberHotkey = new Dictionary<HotkeyData, Property<bool>>();
         private static readonly Dictionary<HotkeyData, Property<int>> _quantity = new Dictionary<HotkeyData, Property<int>>();
 
-        private static EventManager.EventDelegate<QuickAccessSlotUnlockedEvent> EventManager_QuickAccessSlotUnlocked_Event;
-        private static EventManager.EventDelegate<OptionsAppliedEvent> EventManager_OptionsApplied_Event;
+        private static readonly Dictionary<HotkeyElementView, GameObject> _quantityGroup = new Dictionary<HotkeyElementView, GameObject>();
+        private static readonly Dictionary<HotkeyElementView, ILabelViewAdapter> _quantityLabel = new Dictionary<HotkeyElementView, ILabelViewAdapter>();
+
+        private static GameObject _quantityGroupPrefab;
 #endif
 
         internal static Color hotkeyElementEmptyColor = new Color(0.4f, 0.4f, 0.4f, 0.65f);
@@ -1651,12 +1652,15 @@ namespace ToolbeltFix
                     _quantityGroupPrefab = inventoryRadialMenuElementView.QuantityGroup;
 
                     _viewRef(__instance).Initialize(_hotkeysRef(__instance));
-                    _playerRef(__instance).Holder.Dropped += AccessTools.MethodDelegate<Action<IPickupable>>(Holder_Dropped, __instance);
+                    _playerRef(__instance).Holder.Dropped += CreateMethodDelegate<Action<IPickupable>>(Holder_Dropped, __instance);
                     SubscribeToInputEvents.Invoke(__instance, new object[] { _playerRef(__instance).Input });
-                    EventManager_QuickAccessSlotUnlocked_Event = new EventManager.EventDelegate<QuickAccessSlotUnlockedEvent>(AccessTools.MethodDelegate<Action<QuickAccessSlotUnlockedEvent>>(EventManager_QuickAccessSlotUnlocked, __instance));
-                    EventManager_OptionsApplied_Event = new EventManager.EventDelegate<OptionsAppliedEvent>(AccessTools.MethodDelegate<Action<OptionsAppliedEvent>>(EventManager_OptionsApplied, __instance));
-                    EventManager.AddListener(EventManager_QuickAccessSlotUnlocked_Event);
-                    EventManager.AddListener(EventManager_OptionsApplied_Event);
+
+                    EventManager_QuickAccessSlotUnlocked_Events[__instance] = CreateMethodDelegate<Action<QuickAccessSlotUnlockedEvent>>(EventManager_QuickAccessSlotUnlocked, __instance);
+                    EventManager.AddListener(new EventManager.EventDelegate<QuickAccessSlotUnlockedEvent>(EventManager_QuickAccessSlotUnlocked_Events[__instance]));
+
+                    EventManager_OptionsApplied_Events[__instance] = CreateMethodDelegate<Action<OptionsAppliedEvent>>(EventManager_OptionsApplied, __instance);
+                    EventManager.AddListener(new EventManager.EventDelegate<OptionsAppliedEvent>(EventManager_OptionsApplied_Events[__instance]));
+
                     LoadOptions.Invoke(__instance, null);
                     return false;
                 }
@@ -1704,29 +1708,36 @@ namespace ToolbeltFix
                         _quantity.Remove(hotkeyData);
                     }
 
-                    if (_playerRef(__instance).IsNullOrDestroyed())
+                    if (_viewRef(__instance) != null)
                     {
-                        return false;
+                        foreach (HotkeyElementView hotkeyElementView in _elementsRef(_kbViewRef(_viewRef(__instance) as PlatformHotkeyViewProvider) as UHotkeyView))
+                        {
+                            _quantityGroup.Remove(hotkeyElementView);
+                            _quantityLabel.Remove(hotkeyElementView);
+                        }
+
+                        foreach (HotkeyElementView hotkeyElementView in _elementsRef(_dpViewRef(_viewRef(__instance) as PlatformHotkeyViewProvider) as UHotkeyView))
+                        {
+                            _quantityGroup.Remove(hotkeyElementView);
+                            _quantityLabel.Remove(hotkeyElementView);
+                        }
+                    }
+                    else if (!_playerRef(__instance).IsNullOrDestroyed() && _playerRef(__instance).Peer.IsLocalPeer())
+                    {
+                        _quantityGroup.Clear();
+                        _quantityLabel.Clear();
                     }
 
-                    slotStorage_HotkeyController.Remove(_playerRef(__instance).Inventory.GetSlotStorage());
-
-                    foreach (HotkeyElementView hotkeyElementView in _elementsRef(_kbViewRef(_viewRef(__instance) as PlatformHotkeyViewProvider) as UHotkeyView))
+                    if (!_playerRef(__instance).IsNullOrDestroyed())
                     {
-                        _quantityGroup.Remove(hotkeyElementView);
-                        _quantityLabel.Remove(hotkeyElementView);
+                        if (_playerRef(__instance).Holder != null)
+                        {
+                            _playerRef(__instance).Holder.Dropped -= CreateMethodDelegate<Action<IPickupable>>(Holder_Dropped, __instance);
+                        }
+
+                        slotStorage_HotkeyController.Remove(_playerRef(__instance).Inventory.GetSlotStorage());
                     }
 
-                    foreach (HotkeyElementView hotkeyElementView in _elementsRef(_dpViewRef(_viewRef(__instance) as PlatformHotkeyViewProvider) as UHotkeyView))
-                    {
-                        _quantityGroup.Remove(hotkeyElementView);
-                        _quantityLabel.Remove(hotkeyElementView);
-                    }
-
-                    if (_playerRef(__instance).Holder != null)
-                    {
-                        _playerRef(__instance).Holder.Dropped -= AccessTools.MethodDelegate<Action<IPickupable>>(Holder_Dropped, __instance);
-                    }
                     if (_subbedToInventoryEventsRef(__instance) && _inventoryRadialMenuRef(__instance) != null)
                     {
                         _inventoryRadialMenuRef(__instance).View.ShowView -= __instance.Show;
@@ -1734,8 +1745,19 @@ namespace ToolbeltFix
                     }
                     IPlayer player = _playerRef(__instance);
                     UnsubscribeFromInputEvents.Invoke(__instance, new object[] { player?.Input });
-                    EventManager.RemoveListener(EventManager_QuickAccessSlotUnlocked_Event);
-                    EventManager.RemoveListener(EventManager_OptionsApplied_Event);
+
+                    if (EventManager_QuickAccessSlotUnlocked_Events.TryGetValue(__instance, out Action<QuickAccessSlotUnlockedEvent> quickAccesSlotUnlockedEvent))
+                    {
+                        EventManager.RemoveListener(new EventManager.EventDelegate<QuickAccessSlotUnlockedEvent>(quickAccesSlotUnlockedEvent));
+                        EventManager_QuickAccessSlotUnlocked_Events.Remove(__instance);
+                    }
+
+                    if (EventManager_OptionsApplied_Events.TryGetValue(__instance, out Action<OptionsAppliedEvent> optionsAppliedEvent))
+                    {
+                        EventManager.RemoveListener(new EventManager.EventDelegate<OptionsAppliedEvent>(optionsAppliedEvent));
+                        EventManager_OptionsApplied_Events.Remove(__instance);
+                    }
+
                     return false;
                 }
                 catch (Exception e)
@@ -1989,7 +2011,7 @@ namespace ToolbeltFix
                             _reserved[hotkeyData].AddFirst(pickupable.ReferenceId);
                         }
                     }
-                    else if (refresh)
+                    else if (refresh && _inventoryRadialMenuRef(__instance) != null)
                     {
                         IList<IList<InventoryData>> inventoryData = GetInventoryData.Invoke(_inventoryRadialMenuRef(__instance).Inventory, null) as IList<IList<InventoryData>>;
                         _inventoryRadialMenuRef(__instance).Initialize(inventoryData);
@@ -2089,7 +2111,7 @@ namespace ToolbeltFix
 
                     silentSlotStorageTransfer = false;
 
-                    if (transferPickupables)
+                    if (transferPickupables && _inventoryRadialMenuRef(__instance) != null)
                     {
                         IList<IList<InventoryData>> inventoryData = GetInventoryData.Invoke(_inventoryRadialMenuRef(__instance).Inventory, null) as IList<IList<InventoryData>>;
                         _inventoryRadialMenuRef(__instance).Initialize(inventoryData);
@@ -2185,7 +2207,7 @@ namespace ToolbeltFix
                     }
                 }
 
-                if (refresh)
+                if (refresh && _inventoryRadialMenuRef(__instance) != null)
                 {
                     IList<IList<InventoryData>> inventoryData = GetInventoryData.Invoke(_inventoryRadialMenuRef(__instance).Inventory, null) as IList<IList<InventoryData>>;
                     _inventoryRadialMenuRef(__instance).Initialize(inventoryData);
@@ -2469,6 +2491,11 @@ namespace ToolbeltFix
                     Logger.LogException(e);
                 }
             }
+        }
+
+        internal static DelegateType CreateMethodDelegate<DelegateType>(MethodInfo method, object instance) where DelegateType : Delegate
+        {
+            return (DelegateType)Delegate.CreateDelegate(typeof(DelegateType), instance, method.GetBaseDefinition());
         }
 
         public class HotkeyComparer : IComparer<StorageSlot<IPickupable>>
