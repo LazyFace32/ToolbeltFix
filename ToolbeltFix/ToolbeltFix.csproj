@@ -101,7 +101,18 @@
     </Reference>
   </ItemGroup>
   <ItemGroup>
+    <Compile Include="HotkeyComparer.cs" />
     <Compile Include="Main.cs" />
+    <Compile Include="Patches\Crafter_Patches.cs" />
+    <Compile Include="Patches\GeneralSettings_Patches.cs" />
+    <Compile Include="Patches\Holder_Patches.cs" />
+    <Compile Include="Patches\HotkeyController_Patches.cs" />
+    <Compile Include="Patches\HotkeyElementView_Patches.cs" />
+    <Compile Include="Patches\InventoryMenuPresenter_Patches.cs" />
+    <Compile Include="Patches\RadialMenuPresenterBase_Patches.cs" />
+    <Compile Include="Patches\SlotStorageAudio_Patches.cs" />
+    <Compile Include="Patches\SlotStorage_Patches.cs" />
+    <Compile Include="Patches\StorageMenuPresenter_Patches.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
     <Compile Include="VersionChecker.cs" />
   </ItemGroup>
@@ -112,9 +123,15 @@
   </ItemGroup>
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
   <PropertyGroup>
-    <PostBuildEvent>if not exist "C:\Program Files\Epic Games\StrandedDeep\Mods\$(ProjectName)" md "C:\Program Files\Epic Games\StrandedDeep\Mods\$(ProjectName)"
-copy /Y "$(TargetDir)Info.json" "C:\Program Files\Epic Games\StrandedDeep\Mods\$(ProjectName)\Info.json"
-copy /Y "$(TargetPath)" "C:\Program Files\Epic Games\StrandedDeep\Mods\$(ProjectName)\$(ProjectName).dll"</PostBuildEvent>
+    <PostBuildEvent>if exist "C:\Program Files\Epic Games\StrandedDeep\Mods\" (
+   xcopy /D /Y /I "$(TargetDir)Info.json" "C:\Program Files\Epic Games\StrandedDeep\Mods\$(ProjectName)\"
+   xcopy /D /Y /I "$(TargetPath)" "C:\Program Files\Epic Games\StrandedDeep\Mods\$(ProjectName)\"
+)
+
+if exist "C:\Program Files (x86)\Steam\steamapps\common\Stranded Deep\Mods\" (
+   xcopy /D /Y /I "$(TargetDir)Info.json" "C:\Program Files (x86)\Steam\steamapps\common\Stranded Deep\Mods\$(ProjectName)\"
+   xcopy /D /Y /I "$(TargetPath)" "C:\Program Files (x86)\Steam\steamapps\common\Stranded Deep\Mods\$(ProjectName)\"
+)</PostBuildEvent>
   </PropertyGroup>
   <ProjectExtensions>
     <VisualStudio>
