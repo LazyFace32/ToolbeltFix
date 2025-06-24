@@ -99,7 +99,6 @@ namespace ToolbeltFix
         private static readonly AccessTools.FieldRef<StorageSlot<IPickupable>, int> _indexRef = AccessTools.FieldRefAccess<StorageSlot<IPickupable>, int>("_index");
 
         private static readonly AccessTools.FieldRef<SlotStorage, List<StorageSlot<IPickupable>>> _slotDataRef = AccessTools.FieldRefAccess<SlotStorage, List<StorageSlot<IPickupable>>>("_slotData");
-        private static readonly AccessTools.FieldRef<SlotStorage, List<StorageSlot<IPickupable>>> _tempRef = AccessTools.FieldRefAccess<SlotStorage, List<StorageSlot<IPickupable>>>("_temp");
         private static readonly AccessTools.FieldRef<SlotStorage, Transform> _storageContainerRef = AccessTools.FieldRefAccess<SlotStorage, Transform>("_storageContainer");
         private static readonly AccessTools.FieldRef<SlotStorage, bool> _storeOtherStorageRef = AccessTools.FieldRefAccess<SlotStorage, bool>("_storeOtherStorage");
         private static readonly AccessTools.FieldRef<SlotStorage, LoadState> _loadStateRef = AccessTools.FieldRefAccess<SlotStorage, LoadState>("_loadState");
@@ -156,7 +155,7 @@ namespace ToolbeltFix
 
         private static InteractiveType InteractiveType_CONTAINER;
 
-        internal static HotkeyComparer HotkeyComparison { get; } = new HotkeyComparer();
+        internal static InventoryHotkeyQuantityComparer InventoryHotkeyQuantityComparison { get; } = new InventoryHotkeyQuantityComparer();
 
         internal static UnityModManager.ModEntry.ModLogger Logger { get; private set; }
         internal static Settings Settings { get; private set; }
@@ -598,25 +597,6 @@ namespace ToolbeltFix
             return text;
         }
 #endif
-
-        internal static IEnumerable<StorageSlot<IPickupable>> GetSlots(SlotStorage __instance, params IComparer<StorageSlot<IPickupable>>[] comparators)
-        {
-            for (int j = 0; j < _slotDataRef(__instance).Count; j++)
-            {
-                _tempRef(__instance)[j] = _slotDataRef(__instance)[j];
-            }
-            foreach (IComparer<StorageSlot<IPickupable>> comparer in comparators)
-            {
-                _tempRef(__instance).Sort(comparer);
-            }
-            int num;
-            for (int i = 0; i < _tempRef(__instance).Count; i = num + 1)
-            {
-                yield return _tempRef(__instance)[i];
-                num = i;
-            }
-            yield break;
-        }
 
         internal static IEnumerable<IPickupable> GetStored(SlotStorage __instance, StorageType storageType)
         {

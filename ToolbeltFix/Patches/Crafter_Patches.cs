@@ -24,7 +24,7 @@ namespace ToolbeltFix.Patches
 
                 try
                 {
-                    foreach (StorageSlot<IPickupable> storageSlot in Main.GetSlots(_playerRef(__instance).Inventory.GetSlotStorage() as SlotStorage, StorageSlot<IPickupable>.QuantityComparison, Main.HotkeyComparison))
+                    foreach (StorageSlot<IPickupable> storageSlot in _playerRef(__instance).Inventory.GetSlotStorage().GetSlots(Main.InventoryHotkeyQuantityComparison))
                     {
                         foreach (IPickupable obj in storageSlot.Objects)
                         {
