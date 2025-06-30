@@ -697,7 +697,7 @@ namespace ToolbeltFix.Patches
                     SlotStorage storage = _playerRef(__instance).Inventory.GetSlotStorage() as SlotStorage;
 
                     JObject jobject = new JObject();
-                    jobject.AddField("Level", _levelRef(__instance));
+                    jobject.AddField("Level", (float)_levelRef(__instance));
                     JObject jobject2 = new JObject();
                     for (int i = 0; i < _hotkeysRef(__instance).Length; i++)
                     {
